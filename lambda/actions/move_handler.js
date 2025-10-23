@@ -58,7 +58,7 @@ async function handleMove(direction, event) {
     }
 
     // Calculate vision from new position
-    const visibleTiles = vision.calculateVision(
+    const visibleTiles = await vision.calculateVision(
       grid,
       actualX,
       actualY,

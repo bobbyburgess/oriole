@@ -1,32 +1,71 @@
 // Vision calculation for agent perception
+// Determines what tiles the agent can see from its current position
+//
+// Vision modes:
+// 1. Line-of-sight (default): Agent sees N tiles in each cardinal direction until hitting a wall
+// 2. See-through-walls: Agent sees all tiles within N-tile radius (for testing/easy mode)
+//
+// Vision range is configurable via Parameter Store: /oriole/gameplay/vision-range
+// This allows difficulty tuning without redeployment
 
-const VISION_RANGE = 3;
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+
+const ssmClient = new SSMClient();
+
+// Module-level caching for vision range parameter
+let cachedVisionRange = null;
+
+async function getVisionRange() {
+  if (cachedVisionRange !== null) {
+    return cachedVisionRange;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/gameplay/vision-range',
+    WithDecryption: false
+  });
+
+  const response = await ssmClient.send(command);
+  cachedVisionRange = parseInt(response.Parameter.Value);
+  return cachedVisionRange;
+}
+
+// Tile type constants (must match maze generator and DB schema)
 const EMPTY = 0;
 const WALL = 1;
 const GOAL = 2;
 
 /**
  * Calculate what the agent can see from a given position
- * Uses line-of-sight: walls block vision
  *
- * @param {Array} grid - 2D maze grid
- * @param {number} x - Agent x position
- * @param {number} y - Agent y position
- * @param {boolean} seeThroughWalls - Whether walls block vision
- * @returns {Object} Map of visible tiles {x,y}: tileType
+ * Line-of-sight mode (default):
+ * - Cast rays in 4 cardinal directions (N, S, E, W)
+ * - Stop at first wall encountered (walls block vision)
+ * - Returns all visible tiles within range
+ *
+ * See-through mode (testing/debug):
+ * - Returns all tiles within Manhattan distance
+ * - Walls don't block vision
+ *
+ * @param {Array} grid - 2D maze grid (grid[y][x])
+ * @param {number} x - Agent x position (column)
+ * @param {number} y - Agent y position (row)
+ * @param {boolean} seeThroughWalls - Whether walls block vision (default: false)
+ * @returns {Object} Map of visible tiles {"x,y": tileType}
  */
-function calculateVision(grid, x, y, seeThroughWalls = false) {
+async function calculateVision(grid, x, y, seeThroughWalls = false) {
   const visible = {};
   const height = grid.length;
   const width = grid[0].length;
+  const visionRange = await getVisionRange();
 
-  // Always see current position
+  // Agent always sees the tile they're standing on
   visible[`${x},${y}`] = grid[y][x];
 
   if (seeThroughWalls) {
-    // Simple: can see everything within range
-    for (let dy = -VISION_RANGE; dy <= VISION_RANGE; dy++) {
-      for (let dx = -VISION_RANGE; dx <= VISION_RANGE; dx++) {
+    // Debug/easy mode: See all tiles within range (Manhattan distance)
+    for (let dy = -visionRange; dy <= visionRange; dy++) {
+      for (let dx = -visionRange; dx <= visionRange; dx++) {
         const nx = x + dx;
         const ny = y + dy;
         if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
@@ -35,17 +74,19 @@ function calculateVision(grid, x, y, seeThroughWalls = false) {
       }
     }
   } else {
-    // Line-of-sight: cast rays in each direction
-    // North
-    for (let i = 1; i <= VISION_RANGE; i++) {
+    // Line-of-sight: Cast rays in 4 cardinal directions
+    // Stop at first wall (or boundary) encountered in each direction
+
+    // North (decreasing Y)
+    for (let i = 1; i <= visionRange; i++) {
       const ny = y - i;
-      if (ny < 0) break;
+      if (ny < 0) break; // Hit boundary
       visible[`${x},${ny}`] = grid[ny][x];
       if (grid[ny][x] === WALL) break; // Wall blocks further vision
     }
 
     // South
-    for (let i = 1; i <= VISION_RANGE; i++) {
+    for (let i = 1; i <= visionRange; i++) {
       const ny = y + i;
       if (ny >= height) break;
       visible[`${x},${ny}`] = grid[ny][x];
@@ -53,7 +94,7 @@ function calculateVision(grid, x, y, seeThroughWalls = false) {
     }
 
     // East
-    for (let i = 1; i <= VISION_RANGE; i++) {
+    for (let i = 1; i <= visionRange; i++) {
       const nx = x + i;
       if (nx >= width) break;
       visible[`${nx},${y}`] = grid[y][nx];
@@ -61,7 +102,7 @@ function calculateVision(grid, x, y, seeThroughWalls = false) {
     }
 
     // West
-    for (let i = 1; i <= VISION_RANGE; i++) {
+    for (let i = 1; i <= visionRange; i++) {
       const nx = x - i;
       if (nx < 0) break;
       visible[`${nx},${y}`] = grid[y][nx];
