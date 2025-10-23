@@ -9,7 +9,7 @@ exports.handler = async (event) => {
 
   try {
     // Bedrock Agent event structure
-    const { apiPath, requestBody, httpMethod } = event;
+    const { apiPath, requestBody, httpMethod, sessionAttributes } = event;
 
     // Parse Bedrock Agent request body format
     const properties = requestBody?.content?.['application/json']?.properties || [];
@@ -22,27 +22,30 @@ exports.handler = async (event) => {
 
     const { experimentId, reasoning } = params;
 
+    // Extract turnNumber from session attributes (passed via invoke-agent.js)
+    const turnNumber = sessionAttributes?.turnNumber ? parseInt(sessionAttributes.turnNumber) : null;
+
     // Route based on API path
     let result;
     switch (apiPath) {
       case '/move_north':
-        result = await handleMove('north', { experimentId, reasoning });
+        result = await handleMove('north', { experimentId, reasoning, turnNumber });
         break;
 
       case '/move_south':
-        result = await handleMove('south', { experimentId, reasoning });
+        result = await handleMove('south', { experimentId, reasoning, turnNumber });
         break;
 
       case '/move_east':
-        result = await handleMove('east', { experimentId, reasoning });
+        result = await handleMove('east', { experimentId, reasoning, turnNumber });
         break;
 
       case '/move_west':
-        result = await handleMove('west', { experimentId, reasoning });
+        result = await handleMove('west', { experimentId, reasoning, turnNumber });
         break;
 
       case '/recall_all':
-        result = await recallAll.handler({ experimentId, reasoning });
+        result = await recallAll.handler({ experimentId, reasoning, turnNumber });
         break;
 
       default:

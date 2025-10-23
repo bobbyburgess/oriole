@@ -20,6 +20,7 @@ let client = null;
 let cachedDbPassword = null;
 let cachedMaxMoves = null;
 let cachedMaxDurationMinutes = null;
+const rateLimitCache = {};
 
 async function getDbPassword() {
   if (cachedDbPassword) {
@@ -66,6 +67,31 @@ async function getMaxDurationMinutes() {
   return cachedMaxDurationMinutes;
 }
 
+async function getRateLimitRpm(modelName) {
+  if (rateLimitCache[modelName]) {
+    return rateLimitCache[modelName];
+  }
+
+  // Map model name to parameter store key
+  // Example: "claude-3-5-haiku" maps to "/oriole/models/claude-3-5-haiku/rate-limit-rpm"
+  const modelKey = modelName.toLowerCase().replace(/\./g, '-');
+
+  try {
+    const command = new GetParameterCommand({
+      Name: `/oriole/models/${modelKey}/rate-limit-rpm`,
+      WithDecryption: false
+    });
+
+    const response = await ssmClient.send(command);
+    rateLimitCache[modelName] = parseInt(response.Parameter.Value);
+    return rateLimitCache[modelName];
+  } catch (error) {
+    // If no rate limit configured for this model, default to 10 rpm (6s between requests)
+    console.warn(`No rate limit found for model ${modelName}, defaulting to 10 rpm`);
+    return 10;
+  }
+}
+
 async function getDbClient() {
   if (client) {
     return client;
@@ -92,15 +118,22 @@ exports.handler = async (event) => {
   console.log('Check progress event:', JSON.stringify(event, null, 2));
 
   try {
-    const { experimentId } = event;
+    const { experimentId, agentResult, turnNumber = 1 } = event;
+
+    // Extract token/cost data from the agent invocation result
+    const invocationTokensIn = agentResult?.Payload?.inputTokens || 0;
+    const invocationTokensOut = agentResult?.Payload?.outputTokens || 0;
+    const invocationCost = agentResult?.Payload?.cost || 0;
 
     const db = await getDbClient();
     const maxMoves = await getMaxMoves();
     const maxDurationMinutes = await getMaxDurationMinutes();
 
-    // Get experiment current state
+    // Get experiment current state including cumulative tokens/cost
     const expResult = await db.query(
-      'SELECT success, started_at FROM experiments WHERE id = $1',
+      `SELECT success, started_at,
+              total_input_tokens, total_output_tokens, total_cost_usd
+       FROM experiments WHERE id = $1`,
       [experimentId]
     );
 
@@ -111,6 +144,21 @@ exports.handler = async (event) => {
     const experiment = expResult.rows[0];
     const success = experiment.success;
     const startedAt = new Date(experiment.started_at);
+
+    // Calculate cumulative totals
+    const cumulativeInputTokens = (experiment.total_input_tokens || 0) + invocationTokensIn;
+    const cumulativeOutputTokens = (experiment.total_output_tokens || 0) + invocationTokensOut;
+    const cumulativeCost = (parseFloat(experiment.total_cost_usd) || 0) + invocationCost;
+
+    // Update experiment with new cumulative totals
+    await db.query(
+      `UPDATE experiments
+       SET total_input_tokens = $1,
+           total_output_tokens = $2,
+           total_cost_usd = $3
+       WHERE id = $4`,
+      [cumulativeInputTokens, cumulativeOutputTokens, cumulativeCost, experimentId]
+    );
 
     // Count actual actions from agent_actions table
     // Note: experiments.total_moves is only updated at finalization
@@ -126,9 +174,12 @@ exports.handler = async (event) => {
     const elapsedMinutes = (now - startedAt) / 1000 / 60;
 
     console.log(`Experiment ${experimentId}: ${totalMoves}/${maxMoves} moves, ${elapsedMinutes.toFixed(1)}/${maxDurationMinutes} minutes, success: ${success}`);
+    console.log(`Cumulative tokens: ${cumulativeInputTokens} in, ${cumulativeOutputTokens} out, $${cumulativeCost.toFixed(6)} total cost`);
 
     // Determine if we should continue
     // Stop if: goal found OR max moves reached OR max duration exceeded
+    // Note: We check move count BETWEEN turns, so experiments can overshoot max_moves
+    // Example: If at 96 moves and agent makes 8 tool calls in one turn, final count = 104
     const shouldContinue = !success && totalMoves < maxMoves && elapsedMinutes < maxDurationMinutes;
 
     let stopReason = null;
@@ -144,6 +195,13 @@ exports.handler = async (event) => {
     const currentPos = await getCurrentPosition(experimentId);
     console.log(`Current position: (${currentPos.x}, ${currentPos.y})`);
 
+    // Calculate rate limit wait time
+    // Wait duration ensures we don't exceed model-specific rate limits
+    // Formula: 60 / rate_limit_rpm = seconds to wait between requests
+    const rateLimitRpm = await getRateLimitRpm(event.modelName);
+    const waitSeconds = Math.ceil(60 / rateLimitRpm);  // Round up to ensure we stay under limit
+    console.log(`Rate limit: ${rateLimitRpm} req/min, wait duration: ${waitSeconds}s`);
+
     // Return all state needed for next step in the workflow
     // The Step Functions state machine uses this to decide whether to:
     // - Continue looping (invoke agent again)
@@ -157,6 +215,16 @@ exports.handler = async (event) => {
       success,
       shouldContinue,
       stopReason,
+      // Token and cost tracking (visible in Step Functions state!)
+      cumulativeInputTokens,
+      cumulativeOutputTokens,
+      cumulativeTotalTokens: cumulativeInputTokens + cumulativeOutputTokens,
+      cumulativeCost: parseFloat(cumulativeCost.toFixed(6)),
+      // Rate limiting
+      waitSeconds,  // Used by Step Functions Wait state to enforce rate limits
+      rateLimitRpm,
+      // Turn tracking: increment for next agent invocation
+      turnNumber: turnNumber + 1,
       // Current position must be passed to invoke-agent for next prompt
       currentX: currentPos.x,
       currentY: currentPos.y,

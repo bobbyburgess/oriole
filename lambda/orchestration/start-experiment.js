@@ -84,10 +84,10 @@ exports.handler = async (event) => {
     const db = await getDbClient();
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, prompt_text, maze_id, goal_description, start_x, start_y, status, started_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       (agent_id, model_name, prompt_version, prompt_text, maze_id, goal_description, start_x, start_y, started_at, last_activity)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        RETURNING id`,
-      [agentId, modelName, promptVersion, promptText, mazeId, goalDescription, startX, startY, 'running']
+      [agentId, modelName, promptVersion, promptText, mazeId, goalDescription, startX, startY]
     );
 
     const experimentId = result.rows[0].id;
@@ -105,7 +105,8 @@ exports.handler = async (event) => {
       startX,
       startY,
       currentX: startX,  // Initial position = start position
-      currentY: startY
+      currentY: startY,
+      turnNumber: 1  // Initialize turn counter
     };
 
   } catch (error) {

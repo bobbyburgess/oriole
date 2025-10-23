@@ -37,7 +37,7 @@ async function getRecallInterval() {
 
 exports.handler = async (event) => {
   try {
-    const { experimentId, reasoning } = event;
+    const { experimentId, reasoning, turnNumber } = event;
 
     if (!experimentId) {
       return {
@@ -110,7 +110,8 @@ exports.handler = async (event) => {
       null,
       true, // Always succeeds
       seenTiles,
-      0
+      0,
+      turnNumber || null
     );
 
     // Format the recalled memory

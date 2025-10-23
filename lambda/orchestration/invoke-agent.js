@@ -12,8 +12,54 @@
 // The sessionId ensures conversation continuity, but position must be provided explicitly
 
 const { BedrockAgentRuntimeClient, InvokeAgentCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 
 const bedrockClient = new BedrockAgentRuntimeClient();
+const ssmClient = new SSMClient();
+
+// Cache prompts and pricing to avoid repeated SSM calls
+const promptCache = {};
+let pricingCache = null;
+
+async function getPrompt(promptVersion) {
+  if (promptCache[promptVersion]) {
+    return promptCache[promptVersion];
+  }
+
+  const command = new GetParameterCommand({
+    Name: `/oriole/prompts/${promptVersion}`
+  });
+
+  const response = await ssmClient.send(command);
+  promptCache[promptVersion] = response.Parameter.Value;
+  return promptCache[promptVersion];
+}
+
+async function getPricing() {
+  if (pricingCache) {
+    return pricingCache;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/pricing/models'
+  });
+
+  const response = await ssmClient.send(command);
+  pricingCache = JSON.parse(response.Parameter.Value);
+  return pricingCache;
+}
+
+function calculateCost(modelName, inputTokens, outputTokens, pricing) {
+  const modelPricing = pricing[modelName];
+  if (!modelPricing) {
+    console.warn(`No pricing found for model: ${modelName}`);
+    return 0;
+  }
+
+  const inputCost = (inputTokens / 1000000) * modelPricing.input_per_mtok;
+  const outputCost = (outputTokens / 1000000) * modelPricing.output_per_mtok;
+  return inputCost + outputCost;
+}
 
 exports.handler = async (event) => {
   console.log('Invoke agent event:', JSON.stringify(event, null, 2));
@@ -25,12 +71,17 @@ exports.handler = async (event) => {
       agentAliasId,
       goalDescription,
       currentX,
-      currentY
+      currentY,
+      promptVersion = 'v1',
+      turnNumber = 1
     } = event;
 
-    console.log(`Agent invocation for experiment ${experimentId} at position (${currentX}, ${currentY})`);
+    console.log(`Agent invocation for experiment ${experimentId} at position (${currentX}, ${currentY}) using prompt ${promptVersion}`);
 
-    // Construct the prompt for this iteration
+    // Get the prompt text for this version
+    const promptText = await getPrompt(promptVersion);
+
+    // Construct the input for this iteration
     // Critical: We must explicitly tell the agent its current position
     // The agent has no memory of position across orchestration loop iterations
     const input = `You are continuing a maze navigation experiment.
@@ -39,51 +90,104 @@ Experiment ID: ${experimentId}
 Your Current Position: (${currentX}, ${currentY})
 Goal: ${goalDescription}
 
-The maze is on a 60x60 grid. You can see 3 blocks in each cardinal direction using line-of-sight vision (walls block your vision).
+${promptText}
 
-Available actions:
-- move_north: Move one step north (negative Y)
-- move_south: Move one step south (positive Y)
-- move_east: Move one step east (positive X)
-- move_west: Move one step west (negative X)
-- recall_all: Query your spatial memory to see what you've discovered
-
-Continue navigating from your current position! Think step-by-step and use your tools strategically. When you call any action, always include experimentId=${experimentId} in your request.`;
+When you call any action, always include experimentId=${experimentId} in your request.`;
 
     console.log('Invoking agent with input:', input);
+    console.log(`Turn number: ${turnNumber}`);
 
     // Invoke the Bedrock Agent
     // SessionId keeps conversation context (agent can reference previous tool results)
     // But position must be in prompt - agent doesn't track spatial state internally
+    // SessionAttributes pass through to action handlers via router.js
     const command = new InvokeAgentCommand({
       agentId,
       agentAliasId,
       sessionId: `experiment-${experimentId}`, // Consistent session for conversation continuity
-      inputText: input
+      inputText: input,
+      sessionState: {
+        sessionAttributes: {
+          experimentId: experimentId.toString(),
+          turnNumber: turnNumber.toString()
+        }
+      }
     });
 
+    const startTime = Date.now();
+    console.log(`[TIMING] Starting Bedrock Agent invocation at ${new Date().toISOString()}`);
+
     const response = await bedrockClient.send(command);
+
+    console.log(`[TIMING] Bedrock client.send() completed in ${Date.now() - startTime}ms`);
 
     // Process streaming response from agent
     // The agent may invoke multiple tools before responding
     // All tool invocations happen synchronously during this call
     let completion = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let chunkCount = 0;
+    const streamStartTime = Date.now();
+
+    console.log(`[TIMING] Starting to process stream chunks`);
 
     if (response.completion) {
       for await (const chunk of response.completion) {
+        chunkCount++;
+
         if (chunk.chunk?.bytes) {
           const text = new TextDecoder().decode(chunk.chunk.bytes);
           completion += text;
         }
+
+        // Log tool invocations as they happen
+        if (chunk.trace?.trace?.orchestrationTrace?.invocationInput) {
+          const actionGroup = chunk.trace.trace.orchestrationTrace.invocationInput?.actionGroupInvocationInput?.actionGroupName;
+          const apiPath = chunk.trace.trace.orchestrationTrace.invocationInput?.actionGroupInvocationInput?.apiPath;
+          if (apiPath) {
+            console.log(`[TIMING] Tool call: ${apiPath} (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
+          }
+        }
+
+        // Extract token usage from streaming response
+        // Usage stats come in the final chunk
+        if (chunk.trace?.trace?.orchestrationTrace?.modelInvocationInput) {
+          const trace = chunk.trace.trace.orchestrationTrace;
+          if (trace.modelInvocationInput?.text) {
+            console.log(`[TIMING] Model invocation input received (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
+          }
+        }
+
+        // Token usage is in the trace
+        if (chunk.trace?.trace?.orchestrationTrace?.modelInvocationOutput) {
+          const usage = chunk.trace.trace.orchestrationTrace.modelInvocationOutput?.metadata?.usage;
+          if (usage) {
+            inputTokens = usage.inputTokens || 0;
+            outputTokens = usage.outputTokens || 0;
+            console.log(`[TIMING] Token usage received: ${inputTokens} in, ${outputTokens} out (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
+          }
+        }
       }
     }
 
+    const streamDuration = Date.now() - streamStartTime;
+    console.log(`[TIMING] Stream completed: ${chunkCount} chunks in ${streamDuration}ms`);
     console.log('Agent response:', completion);
+    console.log(`Token usage: ${inputTokens} input, ${outputTokens} output`);
+
+    // Calculate cost for this invocation
+    const pricing = await getPricing();
+    const cost = calculateCost(event.modelName, inputTokens, outputTokens, pricing);
+
+    console.log(`Cost for this invocation: $${cost.toFixed(6)}`);
 
     return {
       experimentId,
       agentResponse: completion,
-      status: 'completed'
+      inputTokens,
+      outputTokens,
+      cost
     };
 
   } catch (error) {
@@ -91,8 +195,7 @@ Continue navigating from your current position! Think step-by-step and use your 
 
     return {
       experimentId: event.experimentId,
-      error: error.message,
-      status: 'failed'
+      error: error.message
     };
   }
 };

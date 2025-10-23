@@ -18,7 +18,7 @@ const DIRECTIONS = {
 async function handleMove(direction, event) {
   try {
     // Parse event from Bedrock Agent
-    const { experimentId, reasoning } = event;
+    const { experimentId, reasoning, turnNumber } = event;
 
     if (!experimentId) {
       return {
@@ -80,7 +80,8 @@ async function handleMove(direction, event) {
       actualY,
       success,
       visibleTiles,
-      0 // tokens_used - Bedrock will track this separately
+      0, // tokens_used - Bedrock will track this separately
+      turnNumber || null
     );
 
     // Check if agent found the goal
