@@ -243,9 +243,11 @@ aws ssm put-parameter \
 ### Actions
 - **move_north/south/east/west**: Navigate one step in the given direction
 - **recall_all**: Query spatial memory of all seen tiles
+  - **Cooldown**: Minimum 10 moves between recalls (configurable)
+  - Prevents analysis paralysis loops
 
 ### Perception
-- **Vision Range**: 3 blocks in each cardinal direction
+- **Vision Range**: 3 blocks in each cardinal direction (configurable)
 - **Line-of-Sight**: Walls block vision
 - **Starting Knowledge**: Grid size (60x60), starting position
 
@@ -253,6 +255,36 @@ aws ssm put-parameter \
 - No `getCurrentLocation` tool (agents must track position mentally)
 - Walls block movement and vision
 - Grid boundaries are hard limits
+- **Max Moves**: 100 actions per experiment (configurable)
+- **Max Duration**: 30 minutes per experiment (configurable)
+
+## Runtime Configuration
+
+These parameters can be changed without redeployment via AWS Systems Manager Parameter Store:
+
+### Gameplay Parameters
+```bash
+# Vision range (how far agents can see)
+aws ssm put-parameter --name /oriole/gameplay/vision-range \
+  --value "3" --type String --overwrite
+
+# Recall cooldown (minimum moves between recall_all calls)
+aws ssm put-parameter --name /oriole/experiments/recall-interval \
+  --value "10" --type String --overwrite
+```
+
+### Experiment Limits
+```bash
+# Maximum actions per experiment
+aws ssm put-parameter --name /oriole/experiments/max-moves \
+  --value "100" --type String --overwrite
+
+# Maximum duration in minutes
+aws ssm put-parameter --name /oriole/experiments/max-duration-minutes \
+  --value "30" --type String --overwrite
+```
+
+**Note**: Infrastructure parameters (Lambda timeouts, Step Functions retries) require redeployment to change. See `lib/oriole-stack.js` for details.
 
 ## Development
 
@@ -281,17 +313,43 @@ const claude3OpusAgent = new BedrockAgentConstruct(this, 'Claude3OpusAgent', {
 
 **Agent not invoking actions?**
 - Check that action groups are configured in Bedrock console
-- Verify Lambda permissions in IAM
+- Verify Lambda permissions in IAM (especially SSM GetParameter for /oriole/gameplay/*)
 - Check CloudWatch logs for the ActionRouterLambda
+- Look for AccessDeniedException errors indicating missing IAM permissions
+
+**DependencyFailedException from Bedrock Agent?**
+- This usually means the action Lambda is throwing errors
+- Check ActionRouterLambda CloudWatch logs for the root cause
+- Common issues:
+  - Missing SSM permissions for parameter lookups
+  - Database connection failures
+  - Missing environment variables
+
+**Agent "teleporting" or position tracking broken?**
+- Check `getCurrentPosition()` logic in `lambda/shared/db.js`
+- Verify both `to_x/to_y` and `from_x/from_y` are checked
+- Recall actions set `to_x/to_y` to NULL (agent doesn't move)
+
+**Agent stuck calling recall_all repeatedly?**
+- Check recall cooldown is enforced (should require 10 moves between recalls)
+- Verify `/oriole/experiments/recall-interval` parameter exists
+- Look at `agent_actions` table to count moves between recalls
 
 **Step Function failing?**
 - Check execution history in Step Functions console
 - Verify database connectivity from Lambda
 - Ensure agent ID and alias ID are correct
+- Check for rate limiting (Bedrock Haiku has ~10 req/min limit)
+
+**EventBridge not triggering experiments?**
+- Verify `--region us-west-2` flag is set in trigger script
+- Check EventBridge rule is active
+- Verify state machine ARN is correct
 
 **No data in database?**
 - Verify RDS security group allows Lambda connections
-- Check Lambda environment variables
+- Check Lambda environment variables (DB_HOST, DB_PORT, etc.)
+- Ensure `/oriole/db/password` parameter exists in SSM
 - Test database connection manually
 
 ## Cost Optimization
