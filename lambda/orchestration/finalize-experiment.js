@@ -1,21 +1,50 @@
 // Finalize Experiment Lambda
-// Updates experiment record with final results
+// Final step in the Step Functions workflow
+//
+// Responsibilities:
+// 1. Calculate total actions and tokens used across all agent_actions
+// 2. Determine if the goal was found (check for GOAL tile in vision)
+// 3. Update experiments table with final status, counts, and completion timestamp
+//
+// Called when: shouldContinue=false from check-progress (max moves, duration, or goal found)
 
 const { Client } = require('pg');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 
+const ssmClient = new SSMClient();
+
+// Module-level caching for DB credentials
 let dbClient = null;
+let cachedDbPassword = null;
+
+async function getDbPassword() {
+  if (cachedDbPassword) {
+    return cachedDbPassword;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/db/password',
+    WithDecryption: true
+  });
+
+  const response = await ssmClient.send(command);
+  cachedDbPassword = response.Parameter.Value;
+  return cachedDbPassword;
+}
 
 async function getDbClient() {
   if (dbClient) {
     return dbClient;
   }
 
+  const password = await getDbPassword();
+
   dbClient = new Client({
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT),
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    password: password,
     ssl: {
       rejectUnauthorized: false
     }
@@ -33,7 +62,9 @@ exports.handler = async (event) => {
 
     const db = await getDbClient();
 
-    // Calculate total moves and tokens
+    // Aggregate statistics from all agent actions
+    // total_moves: Count of all actions (movement + recall)
+    // total_tokens: Sum of tokens used (currently 0, Bedrock doesn't expose this yet)
     const statsResult = await db.query(
       `SELECT
          COUNT(*) as total_moves,
@@ -46,7 +77,9 @@ exports.handler = async (event) => {
     const totalMoves = parseInt(statsResult.rows[0].total_moves);
     const totalTokens = parseInt(statsResult.rows[0].total_tokens);
 
-    // Check if goal was found
+    // Check if the agent found the goal
+    // We look at the most recent action's tiles_seen field
+    // If any visible tile has value 2 (GOAL constant), the agent succeeded
     const goalResult = await db.query(
       `SELECT tiles_seen
        FROM agent_actions
@@ -59,7 +92,8 @@ exports.handler = async (event) => {
     let foundGoal = false;
     if (goalResult.rows.length > 0 && goalResult.rows[0].tiles_seen) {
       const tilesSeen = goalResult.rows[0].tiles_seen;
-      // Check if any tile is GOAL (value 2)
+      // tiles_seen is a JSON object: {"x,y": tileType, ...}
+      // Check if any tile is GOAL (value 2 from vision.js constants)
       for (const value of Object.values(tilesSeen)) {
         if (value === 2) {
           foundGoal = true;

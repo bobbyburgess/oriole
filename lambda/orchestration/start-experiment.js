@@ -5,19 +5,37 @@ const { Client } = require('pg');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 
 let dbClient = null;
+let cachedDbPassword = null;
 const ssmClient = new SSMClient();
+
+async function getDbPassword() {
+  if (cachedDbPassword) {
+    return cachedDbPassword;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/db/password',
+    WithDecryption: true
+  });
+
+  const response = await ssmClient.send(command);
+  cachedDbPassword = response.Parameter.Value;
+  return cachedDbPassword;
+}
 
 async function getDbClient() {
   if (dbClient) {
     return dbClient;
   }
 
+  const password = await getDbPassword();
+
   dbClient = new Client({
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT),
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    password: password,
     ssl: {
       rejectUnauthorized: false
     }
@@ -40,6 +58,9 @@ exports.handler = async (event) => {
   console.log('Start experiment event:', JSON.stringify(event, null, 2));
 
   try {
+    // Extract detail from EventBridge event structure
+    const payload = event.detail || event;
+
     const {
       agentId,
       agentAliasId,
@@ -49,7 +70,7 @@ exports.handler = async (event) => {
       goalDescription = 'Find the goal marker',
       startX = 2,
       startY = 2
-    } = event;
+    } = payload;
 
     // Validate required parameters
     if (!agentId || !agentAliasId || !modelName || !mazeId) {
@@ -82,7 +103,9 @@ exports.handler = async (event) => {
       mazeId,
       goalDescription,
       startX,
-      startY
+      startY,
+      currentX: startX,  // Initial position = start position
+      currentY: startY
     };
 
   } catch (error) {
