@@ -1,20 +1,40 @@
 // Viewer Lambda - serves maze replay UI and experiment data
 
 const { Client } = require('pg');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 
+const ssmClient = new SSMClient();
 let client = null;
+let cachedDbPassword = null;
+
+async function getDbPassword() {
+  if (cachedDbPassword) {
+    return cachedDbPassword;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/db/password',
+    WithDecryption: true
+  });
+
+  const response = await ssmClient.send(command);
+  cachedDbPassword = response.Parameter.Value;
+  return cachedDbPassword;
+}
 
 async function getDbClient() {
   if (client) {
     return client;
   }
 
+  const password = await getDbPassword();
+
   client = new Client({
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT),
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    password: password,
     ssl: {
       rejectUnauthorized: false
     }
@@ -114,6 +134,7 @@ function getViewerHTML() {
 <html>
 <head>
   <title>Oriole Maze Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.6/dist/amazon-cognito-identity.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -123,6 +144,26 @@ function getViewerHTML() {
     }
     h1 {
       color: #4CAF50;
+    }
+    #login-form {
+      margin: 20px 0;
+      padding: 20px;
+      background: #2a2a2a;
+      border-radius: 8px;
+      max-width: 400px;
+    }
+    #login-form input {
+      width: 100%;
+      margin: 10px 0;
+      padding: 10px;
+      background: #333;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    #viewer-content {
+      display: none;
     }
     #controls {
       margin: 20px 0;
@@ -176,42 +217,148 @@ function getViewerHTML() {
       color: #e0e0e0;
       border-radius: 4px;
     }
+    .error {
+      color: #ff6b6b;
+      margin: 10px 0;
+    }
   </style>
 </head>
 <body>
   <h1>🐦 Oriole Maze Viewer</h1>
 
-  <div id="controls">
-    <input type="number" id="experimentId" placeholder="Experiment ID" value="1" />
-    <button onclick="loadExperiment()">Load Experiment</button>
-    <br>
-    <button onclick="stepBackward()" id="prevBtn">◀ Previous</button>
-    <button onclick="stepForward()" id="nextBtn">Next ▶</button>
-    <button onclick="toggleAutoplay()" id="playBtn">▶ Play</button>
-    <span id="stepInfo"></span>
+  <div id="login-form">
+    <h3>Sign In</h3>
+    <input type="text" id="username" placeholder="Username" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Sign In</button>
+    <div id="login-error" class="error"></div>
   </div>
 
-  <div id="canvas-container">
-    <canvas id="mazeCanvas" width="600" height="600"></canvas>
-  </div>
+  <div id="viewer-content">
+    <div style="margin-bottom: 10px;">
+      <span id="user-info"></span>
+      <button onclick="logout()">Logout</button>
+    </div>
 
-  <div id="info">
-    <div class="stat" id="experimentInfo">No experiment loaded</div>
-    <div class="stat" id="currentAction"></div>
+    <div id="controls">
+      <input type="number" id="experimentId" placeholder="Experiment ID" value="1" />
+      <button onclick="loadExperiment()">Load Experiment</button>
+      <br>
+      <button onclick="stepBackward()" id="prevBtn">◀ Previous</button>
+      <button onclick="stepForward()" id="nextBtn">Next ▶</button>
+      <button onclick="toggleAutoplay()" id="playBtn">▶ Play</button>
+      <span id="stepInfo"></span>
+    </div>
+
+    <div id="canvas-container">
+      <canvas id="mazeCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div id="info">
+      <div class="stat" id="experimentInfo">No experiment loaded</div>
+      <div class="stat" id="currentAction"></div>
+    </div>
   </div>
 
   <script>
+    // Cognito configuration
+    const poolData = {
+      UserPoolId: 'us-west-2_YyOSMp5U9',
+      ClientId: '7o8esskkibq38qsf6nhisbm51b'
+    };
+    const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+    let jwtToken = null;
     let experimentData = null;
     let currentStep = 0;
     let autoplayInterval = null;
     const CELL_SIZE = 10;
 
+    // Check if already logged in
+    window.onload = function() {
+      const cognitoUser = userPool.getCurrentUser();
+      if (cognitoUser) {
+        cognitoUser.getSession((err, session) => {
+          if (!err && session.isValid()) {
+            jwtToken = session.getIdToken().getJwtToken();
+            showViewer(cognitoUser.getUsername());
+          }
+        });
+      }
+    };
+
+    function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      const authenticationData = {
+        Username: username,
+        Password: password
+      };
+
+      const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+      const userData = {
+        Username: username,
+        Pool: userPool
+      };
+
+      const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+      cognitoUser.authenticateUser(authenticationDetails, {
+        onSuccess: function(session) {
+          jwtToken = session.getIdToken().getJwtToken();
+          showViewer(username);
+        },
+        onFailure: function(err) {
+          document.getElementById('login-error').textContent = err.message || JSON.stringify(err);
+        }
+      });
+    }
+
+    function logout() {
+      const cognitoUser = userPool.getCurrentUser();
+      if (cognitoUser) {
+        cognitoUser.signOut();
+      }
+      jwtToken = null;
+      document.getElementById('login-form').style.display = 'block';
+      document.getElementById('viewer-content').style.display = 'none';
+    }
+
+    function showViewer(username) {
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('viewer-content').style.display = 'block';
+      document.getElementById('user-info').textContent = \`Logged in as: \${username}\`;
+    }
+
     async function loadExperiment() {
-      const experimentId = document.getElementById('experimentId').value;
-      const response = await fetch(\`/experiments/\${experimentId}\`);
-      experimentData = await response.json();
-      currentStep = 0;
-      render();
+      try {
+        const experimentId = document.getElementById('experimentId').value;
+        console.log('Loading experiment:', experimentId);
+        console.log('Using JWT token:', jwtToken ? 'present' : 'missing');
+
+        const response = await fetch(\`/experiments/\${experimentId}\`, {
+          headers: {
+            'Authorization': jwtToken
+          }
+        });
+
+        console.log('Response status:', response.status);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API error:', response.status, errorText);
+          document.getElementById('experimentInfo').innerHTML = \`<span style="color: #ff6b6b;">Error loading experiment: \${response.status} - \${errorText}</span>\`;
+          return;
+        }
+
+        experimentData = await response.json();
+        console.log('Experiment data loaded:', experimentData);
+        currentStep = 0;
+        render();
+      } catch (error) {
+        console.error('Error loading experiment:', error);
+        document.getElementById('experimentInfo').innerHTML = \`<span style="color: #ff6b6b;">Error: \${error.message}</span>\`;
+      }
     }
 
     function render() {

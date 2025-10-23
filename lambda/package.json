@@ -1,0 +1,9 @@
+{
+  "name": "oriole-lambda",
+  "version": "1.0.0",
+  "description": "Lambda functions for Oriole maze navigation",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "@aws-sdk/client-ssm": "^3.400.0"
+  }
+}

@@ -11,47 +11,81 @@ exports.handler = async (event) => {
     // Bedrock Agent event structure
     const { apiPath, requestBody, httpMethod } = event;
 
-    // Parse request body if it's a string
-    let body = requestBody;
-    if (typeof requestBody === 'string') {
-      body = JSON.parse(requestBody);
-    }
+    // Parse Bedrock Agent request body format
+    const properties = requestBody?.content?.['application/json']?.properties || [];
 
-    // Extract content from Bedrock Agent format
-    const { experimentId, reasoning } = body;
+    // Convert properties array to object
+    const params = {};
+    properties.forEach(prop => {
+      params[prop.name] = prop.value;
+    });
+
+    const { experimentId, reasoning } = params;
 
     // Route based on API path
+    let result;
     switch (apiPath) {
       case '/move_north':
-        return await handleMove('north', { experimentId, reasoning });
+        result = await handleMove('north', { experimentId, reasoning });
+        break;
 
       case '/move_south':
-        return await handleMove('south', { experimentId, reasoning });
+        result = await handleMove('south', { experimentId, reasoning });
+        break;
 
       case '/move_east':
-        return await handleMove('east', { experimentId, reasoning });
+        result = await handleMove('east', { experimentId, reasoning });
+        break;
 
       case '/move_west':
-        return await handleMove('west', { experimentId, reasoning });
+        result = await handleMove('west', { experimentId, reasoning });
+        break;
 
       case '/recall_all':
-        return await recallAll.handler({ experimentId, reasoning });
+        result = await recallAll.handler({ experimentId, reasoning });
+        break;
 
       default:
-        return {
+        result = {
           statusCode: 404,
           body: JSON.stringify({ error: `Unknown action: ${apiPath}` })
         };
     }
 
+    // Transform to Bedrock Agent response format
+    return {
+      messageVersion: '1.0',
+      response: {
+        actionGroup: event.actionGroup,
+        apiPath,
+        httpMethod,
+        httpStatusCode: result.statusCode,
+        responseBody: {
+          'application/json': {
+            body: result.body
+          }
+        }
+      }
+    };
+
   } catch (error) {
     console.error('Router error:', error);
     return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: error.message,
-        stack: error.stack
-      })
+      messageVersion: '1.0',
+      response: {
+        actionGroup: event.actionGroup || '',
+        apiPath: event.apiPath || '',
+        httpMethod: event.httpMethod || '',
+        httpStatusCode: 500,
+        responseBody: {
+          'application/json': {
+            body: JSON.stringify({
+              error: error.message,
+              stack: error.stack
+            })
+          }
+        }
+      }
     };
   }
 };
