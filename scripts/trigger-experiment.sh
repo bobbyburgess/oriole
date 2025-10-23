@@ -12,7 +12,7 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
   echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id>"
   echo ""
   echo "Example:"
-  echo "  $0 ABCD1234 EFGH5678 claude-3-5-sonnet 1"
+  echo "  $0 ABCD1234 EFGH5678 claude-3-5-haiku 1"
   echo ""
   echo "Available mazes (ID): "
   echo "  1-6:  One-path mazes (sparse to extreme)"

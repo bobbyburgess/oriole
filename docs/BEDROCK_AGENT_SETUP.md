@@ -20,7 +20,7 @@ After deploying the CDK stack, you'll need to manually configure the Bedrock Age
 
 3. **Create Action Group via AWS Console**
    - Navigate to Amazon Bedrock → Agents
-   - Select the `oriole-claude-35-sonnet` agent
+   - Select the `oriole-claude-35-haiku` agent
    - Click "Edit in Agent Builder"
    - Add Action Group:
      - Name: `NavigationActions`

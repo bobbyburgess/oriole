@@ -26,7 +26,7 @@ EventBridge → Step Functions → Bedrock Agent
 
 ### Components
 
-- **Bedrock Agents**: Claude models navigate mazes autonomously
+- **Bedrock Agents**: Claude 3.5 Haiku (cheapest tool-using model) navigates mazes autonomously
 - **Action Groups**: Lambda functions handling `move_north`, `move_south`, `move_east`, `move_west`, `recall_all`
 - **Step Functions**: Orchestrate experiment lifecycle
 - **RDS Postgres**: Store all moves, reasoning, and metrics
