@@ -1,0 +1,11 @@
+{
+  "name": "oriole-orchestration",
+  "version": "1.0.0",
+  "description": "Experiment orchestration functions",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.0.0",
+    "@aws-sdk/client-ssm": "^3.0.0",
+    "pg": "^8.16.3"
+  }
+}

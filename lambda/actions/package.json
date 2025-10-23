@@ -1,0 +1,9 @@
+{
+  "name": "oriole-action-handlers",
+  "version": "1.0.0",
+  "description": "Bedrock Agent action handlers for Oriole maze navigation",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

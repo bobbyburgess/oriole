@@ -1,0 +1,9 @@
+{
+  "name": "oriole-viewer",
+  "version": "1.0.0",
+  "description": "Maze experiment viewer UI",
+  "main": "viewer.js",
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
