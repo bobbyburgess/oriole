@@ -58,23 +58,19 @@ exports.handler = async (event) => {
   console.log('Finalize experiment event:', JSON.stringify(event, null, 2));
 
   try {
-    const { experimentId, status } = event;
+    const { experimentId } = event;
 
     const db = await getDbClient();
 
     // Aggregate statistics from all agent actions
-    // total_moves: Count of all actions (movement + recall)
     // total_tokens: Sum of tokens used (currently 0, Bedrock doesn't expose this yet)
     const statsResult = await db.query(
-      `SELECT
-         COUNT(*) as total_moves,
-         COALESCE(SUM(tokens_used), 0) as total_tokens
+      `SELECT COALESCE(SUM(tokens_used), 0) as total_tokens
        FROM agent_actions
        WHERE experiment_id = $1`,
       [experimentId]
     );
 
-    const totalMoves = parseInt(statsResult.rows[0].total_moves);
     const totalTokens = parseInt(statsResult.rows[0].total_tokens);
 
     // Check if the agent found the goal
@@ -106,22 +102,19 @@ exports.handler = async (event) => {
     await db.query(
       `UPDATE experiments
        SET completed_at = NOW(),
-           status = $1,
-           total_moves = $2,
-           total_tokens = $3,
-           success = $4
-       WHERE id = $5`,
-      [status === 'failed' ? 'failed' : 'completed', totalMoves, totalTokens, foundGoal, experimentId]
+           last_activity = NOW(),
+           total_tokens = $1,
+           success = $2
+       WHERE id = $3`,
+      [totalTokens, foundGoal, experimentId]
     );
 
-    console.log(`Finalized experiment ${experimentId}: ${totalMoves} moves, ${totalTokens} tokens, success=${foundGoal}`);
+    console.log(`Finalized experiment ${experimentId}: ${totalTokens} tokens, success=${foundGoal}`);
 
     return {
       experimentId,
-      totalMoves,
       totalTokens,
-      success: foundGoal,
-      status: status === 'failed' ? 'failed' : 'completed'
+      success: foundGoal
     };
 
   } catch (error) {

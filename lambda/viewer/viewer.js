@@ -428,7 +428,7 @@ function getViewerHTML() {
       document.getElementById('experimentInfo').innerHTML = \`
         <strong>Model:</strong> \${experimentData.experiment.model_name}<br>
         <strong>Maze:</strong> \${experimentData.maze.name}<br>
-        <strong>Total Moves:</strong> \${experimentData.experiment.total_moves}<br>
+        <strong>Total Moves:</strong> \${experimentData.actions.length}<br>
         <strong>Success:</strong> \${experimentData.experiment.success ? 'Yes' : 'No'}
       \`;
 

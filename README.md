@@ -213,10 +213,15 @@ Example queries:
 psql -h <rds-host> -U oriole_user -d oriole
 
 # List experiments
-SELECT id, model_name, maze_id, total_moves, success
+SELECT id, model_name, maze_id, success
 FROM experiments
 ORDER BY id DESC
 LIMIT 10;
+
+# Get move count for an experiment
+SELECT COUNT(*) as move_count
+FROM agent_actions
+WHERE experiment_id = 1;
 
 # View an experiment's moves
 SELECT step_number, action_type, from_x, from_y, to_x, to_y, success, reasoning
@@ -258,6 +263,92 @@ aws ssm put-parameter \
 - **Max Moves**: 100 actions per experiment (configurable)
 - **Max Duration**: 30 minutes per experiment (configurable)
 
+## Data Model Glossary
+
+Understanding the hierarchy of concepts in Oriole:
+
+### Terminology
+
+- **Experiment**: A complete maze navigation run from start to finish (or timeout/max moves). Tracked in the `experiments` table. Each experiment has:
+  - One maze
+  - One AI model
+  - One prompt version
+  - Start and end positions
+  - Success/failure outcome
+  - Aggregate metrics (tokens, cost, duration)
+
+- **Turn**: One invocation of the Bedrock Agent (one call to `InvokeAgent` API). During a turn, the agent may:
+  - Make multiple tool calls (steps)
+  - Receive tool results
+  - Internally reason about next actions (inferences)
+  - Eventually respond or call more tools
+
+  Tracked via `agent_actions.turn_number`. Useful for analyzing: "Does Model A make more tool calls per turn than Model B?"
+
+- **Step**: One tool call (action). Examples:
+  - `move_north`
+  - `move_south`
+  - `recall_all`
+
+  Tracked as `agent_actions.step_number`. Each step records:
+  - Action type
+  - Success/failure
+  - Position before/after
+  - Tiles visible from new position
+  - Agent's reasoning for this action
+
+- **Inference**: Internal model forward pass(es) during an agent turn. Mostly opaque to us - happens inside Bedrock. We observe the *effects* (tool calls, responses) but not the internal reasoning process.
+
+### Database Hierarchy
+
+```
+experiments (1)
+  └─ turns (N) ← agent_actions.turn_number
+      └─ steps (N) ← agent_actions.step_number
+          └─ inferences (N, partially opaque)
+```
+
+### Example
+
+An experiment might look like:
+```
+Experiment #42 (maze_id=3, model="claude-3-5-haiku")
+  Turn 1:
+    Step 1: move_north  (visible: 3 walls, 2 empty)
+    Step 2: move_east   (visible: 1 wall, 4 empty)
+  Turn 2:
+    Step 3: move_north  (visible: goal tile!)
+    Step 4: recall_all  (memory: 12 tiles seen)
+  Turn 3:
+    Step 5: move_west   (reached goal)
+```
+
+In this example:
+- 1 experiment
+- 3 turns (3 agent invocations)
+- 5 steps (5 tool calls total)
+- Unknown number of inferences (internal model reasoning)
+
+### Querying by Turn
+
+```sql
+-- Average steps per turn by model
+SELECT
+  model_name,
+  COUNT(*) as total_steps,
+  COUNT(DISTINCT turn_number) as total_turns,
+  ROUND(COUNT(*)::numeric / COUNT(DISTINCT turn_number), 2) as avg_steps_per_turn
+FROM agent_actions aa
+JOIN experiments e ON aa.experiment_id = e.id
+GROUP BY model_name;
+
+-- View all actions in a specific turn
+SELECT step_number, action_type, success, reasoning
+FROM agent_actions
+WHERE experiment_id = 42 AND turn_number = 2
+ORDER BY step_number;
+```
+
 ## Runtime Configuration
 
 These parameters can be changed without redeployment via AWS Systems Manager Parameter Store:
@@ -284,7 +375,34 @@ aws ssm put-parameter --name /oriole/experiments/max-duration-minutes \
   --value "30" --type String --overwrite
 ```
 
-**Note**: Infrastructure parameters (Lambda timeouts, Step Functions retries) require redeployment to change. See `lib/oriole-stack.js` for details.
+### Infrastructure Parameters (Require Redeployment)
+
+These parameters are stored in Parameter Store but changes require running `npm run deploy`:
+
+```bash
+# Lambda timeouts (in seconds)
+aws ssm put-parameter --name /oriole/lambda/default-timeout-seconds \
+  --value "30" --type String --overwrite
+
+aws ssm put-parameter --name /oriole/lambda/invoke-agent-timeout-seconds \
+  --value "300" --type String --overwrite  # 5 minutes
+
+# Action router concurrency (1 = serialize all tool calls)
+aws ssm put-parameter --name /oriole/lambda/action-router-concurrency \
+  --value "1" --type String --overwrite
+
+# Step Functions retry configuration
+aws ssm put-parameter --name /oriole/orchestration/retry-interval-seconds \
+  --value "6" --type String --overwrite
+
+aws ssm put-parameter --name /oriole/orchestration/retry-max-attempts \
+  --value "3" --type String --overwrite
+
+aws ssm put-parameter --name /oriole/orchestration/retry-backoff-rate \
+  --value "2.0" --type String --overwrite
+```
+
+After changing any of these, redeploy with `npm run deploy`.
 
 ## Development
 
