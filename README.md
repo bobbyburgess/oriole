@@ -80,7 +80,25 @@ node db/mazes/generator.js
 node db/mazes/load-mazes.js
 ```
 
-### 3. Deploy Infrastructure
+### 3. Set up Cognito Parameters
+
+```bash
+# Option 1: Use the helper script to find and set automatically
+./scripts/setup-cognito-params.sh <user-pool-id> <client-id>
+
+# Option 2: Set manually if you know your values
+aws ssm put-parameter \
+  --name /oriole/cognito/user-pool-id \
+  --value <your-pool-id> \
+  --type String
+
+aws ssm put-parameter \
+  --name /oriole/cognito/user-pool-client-id \
+  --value <your-client-id> \
+  --type String
+```
+
+### 4. Deploy Infrastructure
 
 ```bash
 # Set environment variables
@@ -91,13 +109,11 @@ export CDK_DEFAULT_REGION=us-west-2
 # Synth to preview
 npm run synth
 
-# Deploy
-npm run deploy \
-  --parameters CognitoUserPoolId=<your-pool-id> \
-  --parameters CognitoUserPoolClientId=<your-client-id>
+# Deploy (no parameters needed - reads from Parameter Store)
+npm run deploy
 ```
 
-### 4. Configure Bedrock Agent Action Groups
+### 5. Configure Bedrock Agent Action Groups
 
 **Important**: Action groups must be added manually (CDK doesn't support this yet).
 
