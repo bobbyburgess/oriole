@@ -46,6 +46,7 @@ echo ""
 
 # Send event to EventBridge
 aws events put-events \
+  --region us-west-2 \
   --entries "[{
     \"Source\": \"oriole.experiments\",
     \"DetailType\": \"RunExperiment\",
