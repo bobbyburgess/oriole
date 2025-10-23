@@ -115,16 +115,23 @@ npm run deploy
 
 ### 5. Configure Bedrock Agent Action Groups
 
-**Important**: Action groups must be added manually (CDK doesn't support this yet).
+**Option A: Automated (AWS CLI)**
 
-See [docs/BEDROCK_AGENT_SETUP.md](docs/BEDROCK_AGENT_SETUP.md) for detailed instructions.
+```bash
+# Get outputs from deployment
+AGENT_ID=$(aws cloudformation describe-stacks --stack-name OrioleStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`Claude35AgentId`].OutputValue' --output text)
 
-Quick steps:
-1. Navigate to Bedrock → Agents in AWS Console
-2. Select `oriole-claude-35-sonnet`
-3. Add Action Group with the OpenAPI schema from the docs
-4. Point it to the ActionRouterLambda
-5. Click "Prepare"
+LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name OrioleStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ActionRouterLambdaArn`].OutputValue' --output text)
+
+# Run setup script
+./scripts/setup-agent-actions.sh "$AGENT_ID" "$LAMBDA_ARN"
+```
+
+**Option B: Manual (AWS Console)**
+
+See [docs/BEDROCK_AGENT_SETUP.md](docs/BEDROCK_AGENT_SETUP.md) for step-by-step console instructions.
 
 ## Running Experiments
 
@@ -134,7 +141,7 @@ Quick steps:
 ./scripts/trigger-experiment.sh \
   <agent-id> \
   <agent-alias-id> \
-  "claude-3-5-sonnet" \
+  "claude-3-5-haiku" \
   1
 ```
 
@@ -147,7 +154,7 @@ aws events put-events --entries '[{
   "Detail": "{
     \"agentId\": \"ABCD1234\",
     \"agentAliasId\": \"EFGH5678\",
-    \"modelName\": \"claude-3-5-sonnet\",
+    \"modelName\": \"claude-3-5-haiku\",
     \"promptVersion\": \"v1\",
     \"mazeId\": 1,
     \"goalDescription\": \"Find the goal marker\",
