@@ -1,19 +1,49 @@
 // Database utilities for Lambda functions
-const { Client } = require('pg');
+// Provides shared DB connection and helper functions for experiment tracking
+//
+// Key responsibilities:
+// - Manage PostgreSQL connection with credential caching
+// - Track agent position across actions (critical for stateless orchestration)
+// - Log all agent actions with vision data
+// - Aggregate memory (tiles seen across all actions)
 
+const { Client } = require('pg');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+
+const ssmClient = new SSMClient();
+
+// Module-level caching for reuse across warm Lambda invocations
 let client = null;
+let cachedPassword = null;
+
+async function getDbPassword() {
+  if (cachedPassword) {
+    return cachedPassword;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/db/password',
+    WithDecryption: true
+  });
+
+  const response = await ssmClient.send(command);
+  cachedPassword = response.Parameter.Value;
+  return cachedPassword;
+}
 
 async function getDbClient() {
   if (client) {
     return client;
   }
 
+  const password = await getDbPassword();
+
   client = new Client({
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT),
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    password: password,
     ssl: {
       rejectUnauthorized: false
     }
@@ -44,10 +74,20 @@ async function getMaze(mazeId) {
 }
 
 // Get current agent position from last action
+// This is critical for stateless orchestration - position is the PRIMARY state we track
+//
+// Logic:
+// 1. Get most recent action from agent_actions table
+// 2. If it's a movement action (to_x/to_y populated), return destination
+// 3. If it's a non-movement action like recall_all (to_x/to_y NULL), return from_x/from_y
+// 4. If no actions yet, return start position from experiments table
+//
+// Historical bug: Originally only checked to_x/to_y, causing agent to "teleport"
+// back to start position after recall_all actions set them to NULL
 async function getCurrentPosition(experimentId) {
   const db = await getDbClient();
   const result = await db.query(
-    `SELECT to_x, to_y FROM agent_actions
+    `SELECT to_x, to_y, from_x, from_y FROM agent_actions
      WHERE experiment_id = $1
      ORDER BY step_number DESC
      LIMIT 1`,
@@ -55,10 +95,19 @@ async function getCurrentPosition(experimentId) {
   );
 
   if (result.rows.length > 0) {
-    return { x: result.rows[0].to_x, y: result.rows[0].to_y };
+    const row = result.rows[0];
+    // If to_x/to_y exist (movement action), use them as current position
+    if (row.to_x !== null && row.to_y !== null) {
+      return { x: row.to_x, y: row.to_y };
+    }
+    // Otherwise use from_x/from_y (non-movement action like recall_all stayed in place)
+    // This prevents "teleporting" back to start after recall_all
+    if (row.from_x !== null && row.from_y !== null) {
+      return { x: row.from_x, y: row.from_y };
+    }
   }
 
-  // If no actions yet, get start position
+  // If no actions yet, get start position from experiments table
   const experiment = await getExperiment(experimentId);
   return { x: experiment.start_x, y: experiment.start_y };
 }
@@ -84,7 +133,11 @@ async function logAction(experimentId, stepNumber, actionType, reasoning, fromX,
   );
 }
 
-// Get all tiles the agent has seen
+// Get all tiles the agent has seen across all actions
+// Used by recall_all to provide spatial memory
+//
+// Returns a merged map of all tiles observed: {"x,y": tileType, ...}
+// If a tile was seen multiple times, the latest observation wins (Object.assign)
 async function getAllSeenTiles(experimentId) {
   const db = await getDbClient();
   const result = await db.query(
@@ -94,7 +147,8 @@ async function getAllSeenTiles(experimentId) {
     [experimentId]
   );
 
-  // Merge all tiles_seen into a single map
+  // Merge all tiles_seen JSON objects into a single map
+  // Each action's tiles_seen: {"x,y": 0|1|2, ...} (EMPTY|WALL|GOAL)
   const allTiles = {};
   result.rows.forEach(row => {
     if (row.tiles_seen) {
