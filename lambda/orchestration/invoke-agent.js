@@ -106,6 +106,7 @@ When you call any action, always include experimentId=${experimentId} in your re
       agentAliasId,
       sessionId: `experiment-${experimentId}`, // Consistent session for conversation continuity
       inputText: input,
+      enableTrace: true, // Enable trace to get token usage and reasoning steps
       sessionState: {
         sessionAttributes: {
           experimentId: experimentId.toString(),
@@ -134,6 +135,10 @@ When you call any action, always include experimentId=${experimentId} in your re
 
     if (response.completion) {
       for await (const chunk of response.completion) {
+      // DEBUG: Log full chunk structure for Nova
+      if (chunkCount === 0) {
+        console.log('[DEBUG] Full first chunk structure:', JSON.stringify(chunk, null, 2));
+      }
         chunkCount++;
 
         if (chunk.chunk?.bytes) {
@@ -160,11 +165,13 @@ When you call any action, always include experimentId=${experimentId} in your re
         }
 
         // Token usage is in the trace
+        // Different models use different field names: inputTokens vs inputToken (singular)
         if (chunk.trace?.trace?.orchestrationTrace?.modelInvocationOutput) {
           const usage = chunk.trace.trace.orchestrationTrace.modelInvocationOutput?.metadata?.usage;
           if (usage) {
-            inputTokens = usage.inputTokens || 0;
-            outputTokens = usage.outputTokens || 0;
+            // Support both plural (Claude) and singular (Nova/docs) field names
+            inputTokens = usage.inputTokens || usage.inputToken || 0;
+            outputTokens = usage.outputTokens || usage.outputToken || 0;
             console.log(`[TIMING] Token usage received: ${inputTokens} in, ${outputTokens} out (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
           }
         }
