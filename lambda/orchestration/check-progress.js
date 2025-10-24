@@ -120,10 +120,23 @@ exports.handler = async (event) => {
   try {
     const { experimentId, agentResult, turnNumber = 1 } = event;
 
+    // Handle both Lambda invocation types:
+    // - Direct invocation: agentResult.Payload is an object
+    // - Step Functions Lambda integration: agentResult.Payload is a JSON string
+    let agentPayload = {};
+    if (agentResult?.Payload) {
+      if (typeof agentResult.Payload === 'string') {
+        agentPayload = JSON.parse(agentResult.Payload);
+      } else {
+        agentPayload = agentResult.Payload;
+      }
+    }
+
     // Extract token/cost data from the agent invocation result
-    const invocationTokensIn = agentResult?.Payload?.inputTokens || 0;
-    const invocationTokensOut = agentResult?.Payload?.outputTokens || 0;
-    const invocationCost = agentResult?.Payload?.cost || 0;
+    // CRITICAL: Force to Number to prevent string concatenation
+    const invocationTokensIn = Number(agentPayload.inputTokens || 0);
+    const invocationTokensOut = Number(agentPayload.outputTokens || 0);
+    const invocationCost = Number(agentPayload.cost || 0);
 
     const db = await getDbClient();
     const maxMoves = await getMaxMoves();
@@ -146,9 +159,10 @@ exports.handler = async (event) => {
     const startedAt = new Date(experiment.started_at);
 
     // Calculate cumulative totals
-    const cumulativeInputTokens = (experiment.total_input_tokens || 0) + invocationTokensIn;
-    const cumulativeOutputTokens = (experiment.total_output_tokens || 0) + invocationTokensOut;
-    const cumulativeCost = (parseFloat(experiment.total_cost_usd) || 0) + invocationCost;
+    // CRITICAL: Parse database values as integers to prevent string concatenation
+    const cumulativeInputTokens = parseInt(experiment.total_input_tokens || 0) + invocationTokensIn;
+    const cumulativeOutputTokens = parseInt(experiment.total_output_tokens || 0) + invocationTokensOut;
+    const cumulativeCost = parseFloat(experiment.total_cost_usd || 0) + invocationCost;
 
     // Update experiment with new cumulative totals
     await db.query(

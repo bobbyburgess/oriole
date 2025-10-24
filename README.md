@@ -132,25 +132,17 @@ npm run synth
 npm run deploy
 ```
 
-### 5. Configure Bedrock Agent Action Groups
+### 5. That's It!
 
-**Option A: Automated (AWS CLI)**
+Action groups and Lambda permissions are now fully managed by CDK. The agents are ready to use immediately after `npm run deploy` completes.
 
-```bash
-# Get outputs from deployment
-AGENT_ID=$(aws cloudformation describe-stacks --stack-name OrioleStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`Claude35AgentId`].OutputValue' --output text)
+**What CDK automatically configured:**
+- ✅ Bedrock Agents with inline action groups (move_north, move_south, move_east, move_west, recall_all)
+- ✅ Lambda resource policy permissions for Bedrock to invoke action handlers
+- ✅ IAM roles with proper Bedrock model access
+- ✅ Agent aliases pointing to the latest version
 
-LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name OrioleStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ActionRouterLambdaArn`].OutputValue' --output text)
-
-# Run setup script
-./scripts/setup-agent-actions.sh "$AGENT_ID" "$LAMBDA_ARN"
-```
-
-**Option B: Manual (AWS Console)**
-
-See [docs/BEDROCK_AGENT_SETUP.md](docs/BEDROCK_AGENT_SETUP.md) for step-by-step console instructions.
+**No manual configuration needed!**
 
 ## Running Experiments
 
@@ -469,7 +461,44 @@ const claude3OpusAgent = new BedrockAgentConstruct(this, 'Claude3OpusAgent', {
 2. Run generator: `node db/mazes/generator.js`
 3. Load into DB: `node db/mazes/load-mazes.js`
 
+## Monitoring Experiments
+
+### Preferred Method: Step Functions (Not Database)
+
+The Step Functions execution state is the authoritative source for experiment progress. Database polling can be misleading due to async updates.
+
+**Check running experiments:**
+```bash
+# List recent executions
+aws stepfunctions list-executions \
+  --state-machine-arn $(aws cloudformation describe-stacks --stack-name OrioleStack \
+    --query 'Stacks[0].Outputs[?OutputKey==`StateMachineArn`].OutputValue' --output text) \
+  --max-results 5
+
+# Get detailed status
+aws stepfunctions describe-execution --execution-arn <arn>
+
+# View turn-by-turn history (see token counts, costs, positions)
+aws stepfunctions get-execution-history --execution-arn <arn> --reverse-order
+```
+
+**What you can see in Step Functions history:**
+- Current turn number
+- Cumulative token usage and costs
+- Agent's current position (X, Y)
+- Time elapsed and moves taken
+- Whether experiment will continue or stop
+
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed monitoring workflows.
+
 ## Troubleshooting
+
+**Token counts look wrong (growing exponentially)?**
+- **Symptom:** Values like `cumulativeInputTokens: "137322612506"` instead of normal numbers
+- **Cause:** JavaScript string concatenation bug (adding string + number = concatenation)
+- **Check:** Look at Step Functions execution history for cumulative token values
+- **Fix:** Ensure all numeric operations in check-progress.js use `Number()`, `parseInt()`, or `parseFloat()`
+- See [docs/BEDROCK_AGENT_LEARNINGS.md](docs/BEDROCK_AGENT_LEARNINGS.md#javascript-type-coercion-bugs) for details
 
 **Agent not invoking actions?**
 - Check that action groups are configured in Bedrock console
@@ -496,26 +525,26 @@ const claude3OpusAgent = new BedrockAgentConstruct(this, 'Claude3OpusAgent', {
 - Look at `agent_actions` table to count moves between recalls
 
 **Step Function failing?**
-- Check execution history in Step Functions console
-- Verify database connectivity from Lambda
-- Ensure agent ID and alias ID are correct
-- **ThrottlingException errors**: Reduce rate limit in Parameter Store (e.g., from 6 RPM to 3 RPM)
-  ```bash
-  aws ssm put-parameter --name /oriole/models/claude-3-5-haiku/rate-limit-rpm \
-    --value "3" --overwrite
-  ```
-- Check CloudWatch logs for invoke-agent Lambda to see actual error
+- **FIRST:** Check execution history in Step Functions console (NOT database)
+- Look for the error in the failed task's output
+- Common errors:
+  - **SyntaxError: "not valid JSON"** → Type coercion bug in check-progress.js
+  - **ThrottlingException** → Reduce rate limit in Parameter Store
+  - **AccessDeniedException** → Missing IAM permissions
+- Check CloudWatch logs for the specific Lambda that failed
+- Verify agent ID and alias ID are correct in trigger
 
 **Experiments queuing but not starting?**
 - Check SQS queue depth: `aws sqs get-queue-attributes --queue-url <queue-url>`
 - Verify queue processor Lambda has permissions to start Step Functions
 - Check CloudWatch logs for queue processor Lambda
-- Ensure no zombie Step Functions executions are blocking the queue
+- Ensure Lambda concurrency settings allow processing (check reservedConcurrentExecutions)
 
 **EventBridge not triggering experiments?**
 - Verify `--region us-west-2` flag is set in trigger script
-- Check EventBridge rule is active
-- Verify state machine ARN is correct
+- Use correct event source: `oriole.experiments` (not `oriole.manual`)
+- Use correct detail type: `RunExperiment` (not `TriggerExperiment`)
+- Check EventBridge rule is active: `aws events describe-rule --name <rule>`
 
 **No data in database?**
 - Verify RDS security group allows Lambda connections

@@ -15,7 +15,10 @@ Technical insights, behavioral observations, and hard-won lessons from building 
 8. [Nova Model Compatibility Issues](#nova-model-compatibility-issues)
 9. [Bedrock Agent Versioning & Deployment](#bedrock-agent-versioning--deployment)
 10. [Model Comparisons & Selection](#model-comparisons--selection)
-11. [Best Practices](#best-practices)
+11. [JavaScript Type Coercion Bugs](#javascript-type-coercion-bugs)
+12. [Two-Level Prompting Architecture](#two-level-prompting-architecture)
+13. [Lambda Concurrency for Serialization](#lambda-concurrency-for-serialization)
+14. [Best Practices](#best-practices)
 
 ---
 
@@ -1004,7 +1007,52 @@ Step 17: "explore new areas" → moves to (1,3) [already visited]
 
 ## Bedrock Agent Versioning & Deployment
 
-### Understanding Agent Versions
+### CDK Inline Action Groups (Recommended Approach)
+
+**As of CDK v2.220+, action groups can be defined inline in the agent configuration:**
+
+```javascript
+const agent = new bedrock.CfnAgent(this, 'Agent', {
+  agentName: 'my-agent',
+  agentResourceRoleArn: role.roleArn,
+  foundationModel: 'anthropic.claude-3-haiku-20240307-v1:0',
+  instruction: 'You are a helpful assistant...',
+  actionGroups: [
+    {
+      actionGroupName: 'my-actions',
+      actionGroupExecutor: {
+        lambda: actionLambda.functionArn
+      },
+      apiSchema: {
+        payload: JSON.stringify(openApiSchema)
+      },
+      actionGroupState: 'ENABLED'
+    }
+  ]
+});
+
+// CRITICAL: Add Lambda resource policy permission
+actionLambda.addPermission(`AllowBedrockAgent-${id}`, {
+  principal: new iam.ServicePrincipal('bedrock.amazonaws.com'),
+  action: 'lambda:InvokeFunction',
+  sourceArn: `arn:aws:bedrock:${region}:${account}:agent/${agent.attrAgentId}`
+});
+```
+
+**Benefits:**
+- ✅ Zero manual configuration steps
+- ✅ Action groups deployed atomically with agent
+- ✅ No configuration drift
+- ✅ Full infrastructure-as-code
+- ✅ Version controlled OpenAPI schemas
+
+**Two permissions required:**
+1. **IAM role permission**: `actionLambda.grantInvoke(agentRole)` - allows the agent's IAM role to invoke Lambda
+2. **Lambda resource policy**: `actionLambda.addPermission(...)` - allows Bedrock service to invoke the Lambda
+
+Both are necessary! The resource policy is scoped to the specific agent ARN for security.
+
+### Understanding Agent Versions (Legacy Approach)
 
 AWS Bedrock Agents use a two-tier system:
 
@@ -1339,6 +1387,392 @@ aws lambda add-permission \
 
 ---
 
+## JavaScript Type Coercion Bugs
+
+### The Token Counting Catastrophe
+
+**Symptom:** Token counts in database and Step Functions state grow exponentially:
+```
+Turn 1: cumulativeInputTokens: "01373"
+Turn 2: cumulativeInputTokens: "13732261"
+Turn 3: cumulativeInputTokens: "137322612506"
+Turn 4: cumulativeInputTokens: "1373226125062809"
+...eventually → 26494517640081199905 (exceeds PostgreSQL bigint max!)
+```
+
+**Root Cause: String Concatenation Instead of Addition**
+
+JavaScript's type coercion silently converts addition to string concatenation when one operand is a string:
+
+```javascript
+// BROKEN CODE
+const cumulativeInputTokens = experiment.total_input_tokens + invocationTokensIn;
+// If total_input_tokens is "1373" (string from DB) and invocationTokensIn is 2261:
+// Result: "13732261" (string concatenation!)
+
+// What we expected: 1373 + 2261 = 3634 (addition)
+// What JavaScript did: "1373" + 2261 → "1373" + "2261" = "13732261" (concat)
+```
+
+### Why This Happens
+
+**Multiple sources of type ambiguity:**
+
+1. **PostgreSQL Node Driver** may return numbers as strings for large integers
+2. **Step Functions Lambda Integration** can wrap payloads as JSON strings: `{Payload: "{...}"}`
+3. **Previous Turn Values** already corrupted as strings get concatenated with new numbers
+
+### The Complete Fix
+
+```javascript
+// FIXED CODE in check-progress.js
+
+// 1. Handle both Lambda payload types (string vs object)
+let agentPayload = {};
+if (agentResult?.Payload) {
+  if (typeof agentResult.Payload === 'string') {
+    agentPayload = JSON.parse(agentResult.Payload);  // Parse if string
+  } else {
+    agentPayload = agentResult.Payload;  // Use directly if object
+  }
+}
+
+// 2. Force invocation values to Number
+const invocationTokensIn = Number(agentPayload.inputTokens || 0);
+const invocationTokensOut = Number(agentPayload.outputTokens || 0);
+const invocationCost = Number(agentPayload.cost || 0);
+
+// 3. Parse database values explicitly as integers
+const cumulativeInputTokens = parseInt(experiment.total_input_tokens || 0) + invocationTokensIn;
+const cumulativeOutputTokens = parseInt(experiment.total_output_tokens || 0) + invocationTokensOut;
+const cumulativeCost = parseFloat(experiment.total_cost_usd || 0) + invocationCost;
+```
+
+### Detection Strategy
+
+**How to spot this bug:**
+
+1. **Step Functions execution history** shows string values with exponential growth:
+   ```bash
+   aws stepfunctions get-execution-history --execution-arn <arn> --reverse-order
+   ```
+   Look for `cumulativeInputTokens` that are clearly too large or have leading zeros.
+
+2. **Database integer overflow errors:**
+   ```
+   ERROR: value "26494517640081199905" is out of range for type bigint
+   ```
+
+3. **Cost calculations are impossibly high:**
+   ```
+   cumulativeCost: $3000 for a 5-turn experiment
+   ```
+
+### Prevention Checklist
+
+For ANY numeric accumulation in JavaScript:
+
+- ✅ Use `parseInt()`, `parseFloat()`, or `Number()` on ALL inputs
+- ✅ Never trust database values to be numbers (they might be strings)
+- ✅ Never trust Lambda payloads without type checking
+- ✅ Test with actual data from Step Functions (not just unit tests with literals)
+- ✅ Add monitoring for anomalous values (e.g., token counts > 1M per turn)
+
+### Broader Lesson: Always Validate Numeric Types
+
+This bug class appears anywhere numeric data crosses system boundaries:
+
+- Database → Application (driver type conversion)
+- Step Functions → Lambda (JSON serialization)
+- Lambda → Lambda (payload wrapping)
+- API responses → Application (JSON parsing)
+
+**Golden Rule:** If you're doing math on it, explicitly convert it to a number first.
+
+---
+
+## Two-Level Prompting Architecture
+
+### The Confusion: Two Types of "Prompts"
+
+When working with Bedrock Agents, there are **two distinct prompt layers** that serve different purposes:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Layer 1: Agent Instruction (Bedrock Agent Config)      │
+│  - Hardcoded in CDK (lib/oriole-stack.js)               │
+│  - Defines WHO the agent is                              │
+│  - Rarely changes                                        │
+│  - Example: "You are navigating a 2D maze..."            │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│  Layer 2: Turn Input (Parameter Store)                  │
+│  - Dynamic per-experiment (from /oriole/prompts/v*)      │
+│  - Injected into each turn's input                       │
+│  - Changes between experiments                           │
+│  - Example: "You have 45 actions remaining. Think..."    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Layer 1: Agent Instruction (Identity)
+
+**Where it's defined:**
+```javascript
+// lib/oriole-stack.js
+const claude3Agent = new BedrockAgentConstruct(this, 'Claude3HaikuAgent', {
+  agentName: 'oriole-claude-3-haiku',
+  modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+  instruction: 'You are navigating a 2D maze on a 60x60 grid. Your goal is to find the target object. You can see 3 blocks in each cardinal direction using line-of-sight vision (walls block your vision). You know the grid dimensions and your starting position. Use the available tools to navigate and recall your spatial memory.',
+  actionLambda: actionRouterLambda
+});
+```
+
+**How it's used:**
+- Passed to `CfnAgent` constructor (line 82 in `lib/bedrock-agent-construct.js`)
+- Baked into the Bedrock Agent configuration
+- **This is OUR code**, not AWS boilerplate
+- Changing this requires redeploying the CDK stack
+
+**Purpose:**
+- Establishes agent's role and capabilities
+- Provides unchanging context (grid size, vision mechanics)
+- Sets behavioral expectations
+
+### Layer 2: Turn Input (Dynamic Guidance)
+
+**Where it's defined:**
+```bash
+# Parameter Store
+/oriole/prompts/v1
+/oriole/prompts/v2
+/oriole/prompts/v3-react-basic
+```
+
+**Where it's injected:**
+```javascript
+// lambda/orchestration/invoke-agent.js (lines 81-95)
+const promptText = await getPrompt(promptVersion);
+
+const input = `You are continuing a maze navigation experiment.
+
+Experiment ID: ${experimentId}
+Your Current Position: (${currentX}, ${currentY})
+Goal: ${goalDescription}
+
+${promptText}  // ← Injected from Parameter Store
+
+When you call any action, always include experimentId=${experimentId} in your request.`;
+```
+
+**How it's used:**
+- Fetched from Parameter Store at runtime
+- Combined with current state (position, experiment ID)
+- Sent as input to `InvokeAgent` API call
+- Different for each turn (can include action budget, ReAct prompts, etc.)
+
+**Purpose:**
+- Provide turn-specific guidance
+- Test different prompting strategies (A/B testing)
+- Include dynamic state that changes each turn
+- Add constraints or framing (e.g., "You have 8 actions left")
+
+### Why Two Levels?
+
+**Architectural benefits:**
+
+1. **Experiment Efficiency:** Can test different prompts without recreating agents
+   ```bash
+   # Test v1 prompt
+   ./trigger-experiment.sh AGENT_ID ALIAS_ID claude-3-haiku 1 v1
+
+   # Test v2 prompt (same agent!)
+   ./trigger-experiment.sh AGENT_ID ALIAS_ID claude-3-haiku 1 v2
+   ```
+
+2. **Separation of Concerns:**
+   - Agent instruction = stable identity
+   - Turn input = variable guidance
+
+3. **Rapid Iteration:** Change Parameter Store value, no redeployment needed
+
+### Common Mistake: Expecting Agent to Remember Instructions
+
+**Misconception:**
+```javascript
+// Turn 1 input
+"You are at (2, 2). Remember your position and navigate carefully."
+
+// Turn 2 input
+"Continue navigating."  // ❌ Agent doesn't remember position!
+```
+
+**Correct approach:**
+```javascript
+// EVERY turn must include position
+"Your Current Position: (5, 7)"
+```
+
+The agent instruction provides the base context, but critical state (like position) must be re-stated in every turn input.
+
+### Example: ReAct Prompting via Turn Input
+
+Layer 1 (Agent Instruction): "You are navigating a maze..."
+
+Layer 2 (Turn Input from `/oriole/prompts/v3-react-strict`):
+```
+For each decision, structure your thinking as:
+
+THOUGHT: [Analyze current situation]
+ACTION: [Call one tool]
+OBSERVATION: [Reflect on tool result]
+
+You have [X/8 actions] remaining in this turn.
+```
+
+This allows testing different cognitive frameworks (ReAct, Chain-of-Thought, etc.) without touching infrastructure.
+
+---
+
+## Lambda Concurrency for Serialization
+
+### The Problem: Account-Wide Rate Limits
+
+AWS Bedrock rate limits apply **per model per account per region**:
+- Claude 3 Haiku: 10 RPM
+- Claude 3.5 Haiku: 10 RPM
+- Nova Micro: Unknown (varies)
+
+**What this means:**
+- All experiments targeting Claude 3 Haiku share the same 10 RPM quota
+- Running 2 experiments in parallel = each gets ~5 RPM effective limit
+- Random throttling depending on timing
+
+### The Solution: Reserved Concurrent Executions
+
+```javascript
+// lib/oriole-stack.js (line 274)
+const invokeAgentLambda = new lambda.Function(this, 'InvokeAgentFunction', {
+  runtime: lambda.Runtime.NODEJS_20_X,
+  handler: 'orchestration/invoke-agent.handler',
+  code: lambda.Code.fromAsset(path.join(__dirname, '../lambda')),
+  environment: dbEnvVars,
+  role: lambdaRole,
+  timeout: cdk.Duration.seconds(invokeAgentTimeoutSeconds),
+  reservedConcurrentExecutions: 1  // ← Only ONE invocation at a time
+});
+```
+
+**What `reservedConcurrentExecutions: 1` does:**
+
+1. AWS Lambda reserves exactly 1 execution environment for this function
+2. If function is already running, new invocations **wait in queue**
+3. No two invocations run simultaneously
+4. Effectively serializes all Bedrock Agent API calls
+
+### Architecture: Three Layers of Serialization
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 1: SQS FIFO Queue                                  │
+│ - MessageGroupId = "all-experiments" (static)            │
+│ - Only one experiment starts at a time                   │
+│ - Serializes experiment INITIATION                       │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│ Layer 2: Step Functions Sequential Workflow              │
+│ - InvokeAgent → Wait → CheckProgress → Loop             │
+│ - Only one turn at a time within experiment              │
+│ - Serializes TURNS within an experiment                  │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│ Layer 3: Lambda Reserved Concurrency = 1                 │
+│ - Only one InvokeAgent call executing globally          │
+│ - Prevents parallel Bedrock API calls                   │
+│ - Serializes BEDROCK INVOCATIONS across all experiments │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Why Not Just Use SQS?
+
+**SQS alone doesn't prevent concurrent API calls:**
+
+```
+Experiment A (Step Functions):
+  Turn 1 → InvokeAgent ──┐
+                           ├→ Both hit Bedrock at same time!
+Experiment B (Step Functions):  │
+  Turn 1 → InvokeAgent ──┘
+```
+
+Even though SQS ensures experiments start sequentially, within each experiment's Step Functions execution, agent turns could overlap if Experiment A is long-running.
+
+**Lambda concurrency ensures:**
+```
+Experiment A: InvokeAgent (running) ───────────────▶
+Experiment B: InvokeAgent (QUEUED, waits) ─────────────▶
+```
+
+### Verification
+
+**Check the setting:**
+```bash
+aws lambda get-function-concurrency \
+  --function-name OrioleStack-InvokeAgentFunctionAD5BFB56-n2hiHRIF3VPR
+
+# Output:
+# {
+#   "ReservedConcurrentExecutions": 1
+# }
+```
+
+**Note:** `get-function-configuration` does NOT always show this value. Use `get-function-concurrency` for authoritative answer.
+
+### Trade-offs
+
+**Pros:**
+- ✅ Zero rate limiting errors (never hit Bedrock limits)
+- ✅ Deterministic behavior (no timing-dependent failures)
+- ✅ Predictable experiment duration
+- ✅ Simple to reason about (strict serialization)
+
+**Cons:**
+- ❌ Lower throughput (can't use full 10 RPM quota)
+- ❌ Experiments queue behind each other
+- ❌ Long-running experiment blocks all others
+
+### Alternative: Per-Model Concurrency
+
+**Not implemented, but possible:**
+
+```javascript
+// Separate Lambda per model
+const claude3HaikuInvokeLambda = new lambda.Function(this, 'Claude3HaikuInvoke', {
+  reservedConcurrentExecutions: 1
+});
+
+const claude35HaikuInvokeLambda = new lambda.Function(this, 'Claude35HaikuInvoke', {
+  reservedConcurrentExecutions: 1
+});
+```
+
+This would allow:
+- Claude 3 Haiku experiments run serially (no conflicts)
+- Claude 3.5 Haiku experiments run serially (no conflicts)
+- **But** different models can run in parallel (separate quotas)
+
+**Why we didn't do this:**
+- More complex routing logic
+- More Lambdas to manage
+- Current approach is simpler and works well enough
+
+---
+
 ## Best Practices
 
 ### 1. Always Log Actions with Full Context
@@ -1520,9 +1954,21 @@ The biggest lesson? **Don't fight AWS rate limits with retries**. Embrace them w
 
 ---
 
-**Document Version:** 3.0
+**Document Version:** 5.0
 **Last Updated:** 2025-10-24
 **Author:** Claude Code Session (Debugging & Implementation)
+**Major Changes in v5.0:**
+- **CDK Inline Action Groups**: Documented how to use `actionGroups` property in CfnAgent (CDK v2.220+)
+- **Lambda Resource Policy**: Added critical requirement for `addPermission()` in addition to `grantInvoke()`
+- **Zero Manual Steps**: Agents now fully deployable via `cdk deploy` with no CLI configuration
+- **Eliminated Configuration Drift**: Action groups, permissions, and schemas all in version control
+- Marked legacy versioning/alias workarounds as deprecated
+**Major Changes in v4.0:**
+- Added JavaScript Type Coercion Bugs section (token counting string concatenation)
+- Documented Two-Level Prompting Architecture (agent instruction vs turn input)
+- Added Lambda Concurrency for Serialization section (reservedConcurrentExecutions)
+- Updated monitoring workflows to prefer Step Functions over database
+- Added comprehensive troubleshooting guide (TROUBLESHOOTING.md)
 **Major Changes in v3.0:**
 - Added comprehensive Nova model compatibility analysis
 - Documented Bedrock Agent versioning challenges and workarounds
