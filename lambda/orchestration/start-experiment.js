@@ -89,17 +89,16 @@ exports.handler = async (event) => {
       throw new Error('Missing required parameters: agentId, agentAliasId, modelName, mazeId');
     }
 
-    // Get prompt text
-    const promptText = await getPrompt(promptVersion);
+    // Note: prompt text is fetched at runtime in invoke-agent, not stored in DB
 
     // Create experiment record
     const db = await getDbClient();
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, prompt_text, maze_id, goal_description, start_x, start_y, started_at, last_activity)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+       (agent_id, model_name, prompt_version, maze_id, goal_description, start_x, start_y, started_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        RETURNING id`,
-      [agentId, modelName, promptVersion, promptText, mazeId, goalDescription, startX, startY]
+      [agentId, modelName, promptVersion, mazeId, goalDescription, startX, startY]
     );
 
     const experimentId = result.rows[0].id;

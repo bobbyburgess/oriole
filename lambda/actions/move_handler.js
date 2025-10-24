@@ -92,7 +92,6 @@ async function handleMove(direction, event) {
       actualY,
       success,
       visibleTiles,
-      0, // tokens_used - Bedrock will track this separately
       turnNumber || null
     );
 

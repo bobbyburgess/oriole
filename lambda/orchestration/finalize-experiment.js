@@ -62,16 +62,8 @@ exports.handler = async (event) => {
 
     const db = await getDbClient();
 
-    // Aggregate statistics from all agent actions
-    // total_tokens: Sum of tokens used (currently 0, Bedrock doesn't expose this yet)
-    const statsResult = await db.query(
-      `SELECT COALESCE(SUM(tokens_used), 0) as total_tokens
-       FROM agent_actions
-       WHERE experiment_id = $1`,
-      [experimentId]
-    );
-
-    const totalTokens = parseInt(statsResult.rows[0].total_tokens);
+    // Note: Token counts are tracked in experiments table via check-progress.js
+    // No need to aggregate from agent_actions (we use total_input_tokens + total_output_tokens)
 
     // Check if the agent found the goal
     // We look at the most recent action's tiles_seen field
@@ -102,18 +94,15 @@ exports.handler = async (event) => {
     await db.query(
       `UPDATE experiments
        SET completed_at = NOW(),
-           last_activity = NOW(),
-           total_tokens = $1,
-           success = $2
-       WHERE id = $3`,
-      [totalTokens, foundGoal, experimentId]
+           success = $1
+       WHERE id = $2`,
+      [foundGoal, experimentId]
     );
 
-    console.log(`Finalized experiment ${experimentId}: ${totalTokens} tokens, success=${foundGoal}`);
+    console.log(`Finalized experiment ${experimentId}: success=${foundGoal}`);
 
     return {
       experimentId,
-      totalTokens,
       success: foundGoal
     };
 

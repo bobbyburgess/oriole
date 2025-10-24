@@ -110,7 +110,6 @@ exports.handler = async (event) => {
       null,
       true, // Always succeeds
       seenTiles,
-      0,
       turnNumber || null
     );
 
