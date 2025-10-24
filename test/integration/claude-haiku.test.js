@@ -27,8 +27,8 @@ require('dotenv').config();
 
 describe('Claude 3.5 Haiku Integration', () => {
   // Increase timeout for real experiment runs
-  // With 3 RPM rate limiting: 100 turns × 20s = 2000s (~33 min) + overhead
-  jest.setTimeout(2700000); // 45 minutes
+  // With 8 RPM rate limiting: 100 turns × 7.5s = 750s (~12.5 min) + overhead
+  jest.setTimeout(2700000); // 45 minutes (conservative safety margin)
 
   const HAIKU_CONFIG = {
     agentId: process.env.CLAUDE_HAIKU_AGENT_ID || '26U4QFQUJT',
