@@ -1,5 +1,17 @@
 // Start Experiment Lambda
-// Creates a new experiment record in the database
+// First step in the Step Functions workflow
+//
+// Responsibilities:
+// 1. Create experiment record in database with metadata (agent, model, maze, prompt)
+// 2. Initialize experiment state (started_at, positions)
+// 3. Return all fields needed by subsequent steps (currentX, currentY, turnNumber, etc.)
+//
+// What gets passed forward to Step Functions:
+// - experimentId: Database ID for this run
+// - agentId/agentAliasId: Bedrock Agent identifiers
+// - modelName: For pricing and rate limit lookups
+// - currentX/currentY: Starting position (critical for stateless orchestration)
+// - turnNumber: Initialized to 1, incremented by check-progress
 
 const { Client } = require('pg');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');

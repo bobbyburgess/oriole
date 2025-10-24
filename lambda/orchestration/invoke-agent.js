@@ -97,7 +97,8 @@ When you call any action, always include experimentId=${experimentId} in your re
     console.log('Invoking agent with input:', input);
     console.log(`Turn number: ${turnNumber}`);
 
-    // Invoke the Bedrock Agent
+    // Invoke the Bedrock Agent (single API call per turn)
+    // This ONE call may result in multiple tool invocations handled by Bedrock's orchestration
     // SessionId keeps conversation context (agent can reference previous tool results)
     // But position must be in prompt - agent doesn't track spatial state internally
     // SessionAttributes pass through to action handlers via router.js
@@ -123,8 +124,10 @@ When you call any action, always include experimentId=${experimentId} in your re
     console.log(`[TIMING] Bedrock client.send() completed in ${Date.now() - startTime}ms`);
 
     // Process streaming response from agent
-    // The agent may invoke multiple tools before responding
-    // All tool invocations happen synchronously during this call
+    // The agent may invoke multiple tools before responding (e.g., 13+ tool calls in one turn)
+    // All tool invocations happen INSIDE this single API call (Bedrock Agents' orchestration)
+    // This is the key architectural advantage: multiple tool calls don't count as separate API calls
+    // Our rate limit (6 RPM) controls time between TURNS, not between individual tool calls
     let completion = '';
     let inputTokens = 0;
     let outputTokens = 0;

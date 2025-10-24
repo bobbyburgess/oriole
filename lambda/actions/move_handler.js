@@ -1,4 +1,13 @@
 // Shared movement handler for all directional moves
+// Called by router.js for move_north, move_south, move_east, move_west
+//
+// Flow:
+// 1. Calculate target position based on direction
+// 2. Validate move (check walls, boundaries)
+// 3. If invalid, agent stays in place (success=false)
+// 4. Calculate vision from actual position
+// 5. Log action to database with from/to coordinates
+// 6. Return success status and visible tiles to agent
 
 const db = require('../shared/db');
 const vision = require('../shared/vision');
@@ -39,6 +48,9 @@ async function handleMove(direction, event) {
     const newY = currentPos.y + delta.dy;
 
     // Check if move is valid (not a wall, within bounds)
+    // Invalid moves return success=false but still log the action
+    // Agent stays in place and sees tiles from current position
+    // This feedback helps the agent learn maze boundaries
     const height = grid.length;
     const width = grid[0].length;
     let success = true;
@@ -46,12 +58,12 @@ async function handleMove(direction, event) {
     let actualY = newY;
 
     if (newX < 0 || newX >= width || newY < 0 || newY >= height) {
-      // Out of bounds
+      // Out of bounds - agent stays in current position
       success = false;
       actualX = currentPos.x;
       actualY = currentPos.y;
     } else if (grid[newY][newX] === vision.WALL) {
-      // Hit a wall
+      // Hit a wall - agent stays in current position
       success = false;
       actualX = currentPos.x;
       actualY = currentPos.y;
