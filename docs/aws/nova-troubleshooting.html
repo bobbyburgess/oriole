@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>Troubleshooting tool calls - Amazon Nova</title><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="assets_root" content="/assets" /><meta name="target_state" content="prompting-tool-troubleshooting" /><meta name="default_state" content="prompting-tool-troubleshooting" /><link rel="icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="shortcut icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/prompting-tool-troubleshooting.html" /><meta name="description" content="You might see different errors when working with tools and Amazon Nova models. Here are a few examples and tips to help you troubleshoot." /><meta name="deployment_region" content="IAD" /><meta name="product" content="Amazon Nova" /><meta name="guide" content="User Guide for Amazon Nova" /><meta name="abstract" content="Insert abstract text" /><meta name="guide-locale" content="en_us" /><meta name="tocs" content="toc-contents.json" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/prompting-tool-troubleshooting.html" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="id-id" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="id" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="de-de" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="de" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="en-us" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="en" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="es-es" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="es" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="fr-fr" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="fr" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="it-it" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="it" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="ja-jp" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="ja" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="ko-kr" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="ko" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="pt-br" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="pt" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_cn/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="zh-cn" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_tw/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="zh-tw" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/prompting-tool-troubleshooting.html" hreflang="x-default" /><meta name="feedback-item" content="Bedrock" /><meta name="this_doc_product" content="Amazon Nova" /><meta name="this_doc_guide" content="User Guide for Amazon Nova" /><head xmlns="http://www.w3.org/1999/xhtml"> <script defer="" src="/assets/r/awsdocs-doc-page.2.0.0.js"></script><link href="/assets/r/awsdocs-doc-page.2.0.0.css" rel="stylesheet"/></head>
+<script defer="" id="awsc-panorama-bundle" type="text/javascript" src="https://prod.pa.cdn.uis.awsstatic.com/panorama-nav-init.js" data-config="{'appEntity':'aws-documentation','region':'us-east-1','service':'nova'}"></script><meta id="panorama-serviceSubSection" value="User Guide for Amazon Nova" /><meta id="panorama-serviceConsolePage" value="Troubleshooting tool calls" /><meta name="uiVersion" content="2024.10" /></head><body class="awsdocs awsui"><div class="awsdocs-container"><awsdocs-header></awsdocs-header><awsui-app-layout id="app-layout" class="awsui-util-no-gutters" ng-controller="ContentController as $ctrl" header-selector="awsdocs-header" navigation-hide="false" navigation-width="$ctrl.navWidth" navigation-open="$ctrl.navOpen" navigation-change="$ctrl.onNavChange($event)" tools-hide="$ctrl.hideTools" tools-width="$ctrl.toolsWidth" tools-open="$ctrl.toolsOpen" tools-change="$ctrl.onToolsChange($event)"><div id="guide-toc" dom-region="navigation"><awsdocs-toc></awsdocs-toc></div><div id="main-column" dom-region="content" tabindex="-1"><awsdocs-view class="awsdocs-view"><div id="awsdocs-content"><head><title>Troubleshooting tool calls - Amazon Nova</title><meta name="pdf" content="/pdfs/nova/latest/userguide/nova-ug.pdf#prompting-tool-troubleshooting" /><meta name="rss" content="nova-ug.rss" /><meta name="forums" content="https://repost.aws/search/content?globalSearch=Amazon Nova" /><meta name="feedback" content="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/prompting-tool-troubleshooting.html" /><meta name="feedback-yes" content="feedbackyes.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/prompting-tool-troubleshooting.html" /><meta name="feedback-no" content="feedbackno.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/prompting-tool-troubleshooting.html" /><meta name="keywords" content="Amazon Nova,foundation model,Nova,content creation models,text understanding,image understanding,document understanding,image generation,video generation,multimodal models,multimodal" /><script type="application/ld+json">
+{
+    "@context" : "https://schema.org",
+    "@type" : "BreadcrumbList",
+    "itemListElement" : [
+      {
+        "@type" : "ListItem",
+        "position" : 1,
+        "name" : "AWS",
+        "item" : "https://aws.amazon.com"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 2,
+        "name" : "Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/index.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 3,
+        "name" : "User Guide for Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 4,
+        "name" : "Prompting best practices for Amazon Nova understanding models",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/prompting.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 5,
+        "name" : "Text understanding prompting best practices",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/prompting-text-understanding.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 6,
+        "name" : "Use external tools",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/prompting-tools.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 7,
+        "name" : "Troubleshooting tool calls",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/prompting-tools.html"
+      }
+    ]
+}
+</script></head><body><div id="main"><div style="display: none"><a href="/pdfs/nova/latest/userguide/nova-ug.pdf#prompting-tool-troubleshooting" target="_blank" rel="noopener noreferrer" title="Open PDF"></a></div><div id="breadcrumbs" class="breadcrumb"><a href="/index.html">Documentation</a><a href="/nova/index.html">Amazon Nova</a><a href="what-is-nova.html">User Guide for Amazon Nova</a></div><div id="main-content" class="awsui-util-container"><div id="main-col-body"><awsdocs-language-banner data-service="$ctrl.pageService"></awsdocs-language-banner><h1 class="topictitle" id="prompting-tool-troubleshooting">Troubleshooting tool calls</h1><div class="awsdocs-page-header-container"><awsdocs-page-header></awsdocs-page-header><awsdocs-filter-selector id="awsdocs-filter-selector"></awsdocs-filter-selector></div><p>You might see different errors when working with tools and Amazon Nova models. Here are a few examples and tips to help you troubleshoot.</p><div class="collapsible" data-expand-section="_collapse_all_"><awsui-expandable-section variant="container" header="Model Error Exception" id="troubleshooting-model-error" expanded="false"><p><code class="code">An error occurred (ModelErrorException) when calling the Converse operation: The model produced an invalid sequence as part of ToolUse. Please refer to the model tool use troubleshooting guide.</code></p><p><b>Validate your inference parameters</b> - Amazon Nova models have more success calling tools when using greedy decoding. To enable greedy decoding, set the temperature parameters to 0.</p><pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><code class="code" copy="true">inferenceConfig=<span>{</span>
+    "temperature": 0
+}
+
+additionalModelRequestFields=<span>{</span>"inferenceConfig": <span>{</span>"topK": 1}}</code></code></pre><p><b>Increase the maximum token count</b> - It is common for tool outputs to require a large token output, ensure that the max tokens set is large enough to accommodate the expected return schema. If the model response is larger than your max token count, it will trigger an exception. You can set the maximum tokens in the <code class="code">inferenceConfig</code> parameter:</p><pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><code class="code" copy="true">inferenceConfig=<span>{</span>
+    "maxTokens": 3000
+}</code></code></pre><p><b>Review the system prompt</b> - To improve the accuracy of tool calling, Amazon Nova uses chain-of-thought reasoning when calling a tool. You will see this output in the response in &lt;thinking&gt; tags. We do not recommended trying to remove this functionality. Instead, we recommend that you drop the output if you do not need it in your application.</p></awsui-expandable-section></div><div class="collapsible" data-expand-section="_collapse_all_"><awsui-expandable-section variant="container" header="Validation Exception" id="troubleshooting-validation-exception" expanded="false"><p><code class="code">An error occurred (ValidationException) when calling the Converse operation</code></p><p>The passed tool configuration does not comply to the required conventions. Refer to the <a href="https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock-runtime/client/converse.html" rel="noopener noreferrer" target="_blank"><span>Converse API spec</span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a> for specifications for all parameters.</p></awsui-expandable-section></div><div class="collapsible" data-expand-section="_collapse_all_"><awsui-expandable-section variant="container" header="A tool is not returned when expected" id="troubleshooting-tool-not-returned" expanded="false"><p>If it looks like tools are being ignored by the model, make sure you are following the correct JSON schema for the tool config:</p><div class="itemizedlist">
+                 
+                 
+                 
+            <ul class="itemizedlist"><li class="listitem">
+                    <p>Top level schema must of of type <a href="https://json-schema.org/understanding-json-schema/reference/object" rel="noopener noreferrer" target="_blank"><span>Object</span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a></p>
+                </li><li class="listitem">
+                    <p>Only three fields are supported in top-level Object - <code class="code">type</code> (must be set to "object"), <code class="code">properties</code>, and <code class="code">required</code></p>
+                </li><li class="listitem">
+                    <p>Common unsupported fields at the top level are: <code class="code">$schema</code>, <code class="code">description</code>, <code class="code">title</code>, and <code class="code">additionalProperties</code></p>
+                </li></ul></div><p>If a tool is not being returned when expected, it is recommended to leverage the <code class="code">tool_choice</code> API parameter.</p><div class="itemizedlist">
+                 
+                 
+            <ul class="itemizedlist"><li class="listitem">
+                    <p><b>Tool</b>: The specified tool will be called once.</p>
+                    <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><span>{</span>
+   "toolChoice": <span>{</span>
+        "tool": <span>{</span>
+            "name": "name_of_tool"
+        }
+    }
+}</code></pre>
+                </li><li class="listitem">
+                    <p><b>Any</b>: One of the provided tools will be called at least once.</p>
+                    <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><span>{</span>
+   "toolChoice": <span>{</span>
+        "any": <span>{</span>}
+    }
+}</code></pre>
+                </li></ul></div></awsui-expandable-section></div><awsdocs-copyright class="copyright-print"></awsdocs-copyright><awsdocs-thumb-feedback right-edge="{{$ctrl.thumbFeedbackRightEdge}}"></awsdocs-thumb-feedback></div><noscript><div><div><div><div id="js_error_message"><p><img src="https://d1ge0kk1l5kms0.cloudfront.net/images/G/01/webservices/console/warning.png" alt="Warning" /> <strong>Javascript is disabled or is unavailable in your browser.</strong></p><p>To use the Amazon Web Services Documentation, Javascript must be enabled. Please refer to your browser's Help pages for instructions.</p></div></div></div></div></noscript><div id="main-col-footer" class="awsui-util-font-size-0"><div id="doc-conventions"><a target="_top" href="/general/latest/gr/docconventions.html">Document Conventions</a></div><div class="prev-next"><div id="previous" class="prev-link" accesskey="p" href="./prompting-tools-function.html">Tool calling systems</div><div id="next" class="next-link" accesskey="n" href="./prompting-video-understanding.html">Vision understanding</div></div></div><awsdocs-page-utilities></awsdocs-page-utilities></div><div id="quick-feedback-yes" style="display: none;"><div class="title">Did this page help you? - Yes</div><div class="content"><p>Thanks for letting us know we're doing a good job!</p><p>If you've got a moment, please tell us what we did right so we can do more of it.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/prompting-tool-troubleshooting.html"></awsui-button></p></div></div><div id="quick-feedback-no" style="display: none;"><div class="title">Did this page help you? - No</div><div class="content"><p>Thanks for letting us know this page needs work. We're sorry we let you down.</p><p>If you've got a moment, please tell us how we can make the documentation better.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/prompting-tool-troubleshooting.html"></awsui-button></p></div></div></div></body></div></awsdocs-view><div class="page-loading-indicator" id="page-loading-indicator"><awsui-spinner size="large"></awsui-spinner></div></div><div id="tools-panel" dom-region="tools"><awsdocs-tools-panel id="awsdocs-tools-panel"></awsdocs-tools-panel></div></awsui-app-layout><awsdocs-cookie-banner class="doc-cookie-banner"></awsdocs-cookie-banner></div></body></html>

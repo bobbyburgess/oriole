@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>Tool use (function calling) with Amazon Nova - Amazon Nova</title><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="assets_root" content="/assets" /><meta name="target_state" content="tool-use" /><meta name="default_state" content="tool-use" /><link rel="icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="shortcut icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html" /><meta name="description" content="Learn how you can create and use tools with Amazon Nova." /><meta name="deployment_region" content="IAD" /><meta name="product" content="Amazon Nova" /><meta name="guide" content="User Guide for Amazon Nova" /><meta name="abstract" content="Insert abstract text" /><meta name="guide-locale" content="en_us" /><meta name="tocs" content="toc-contents.json" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/tool-use.html" hreflang="id-id" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/tool-use.html" hreflang="id" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/tool-use.html" hreflang="de-de" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/tool-use.html" hreflang="de" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html" hreflang="en-us" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html" hreflang="en" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/tool-use.html" hreflang="es-es" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/tool-use.html" hreflang="es" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/tool-use.html" hreflang="fr-fr" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/tool-use.html" hreflang="fr" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/tool-use.html" hreflang="it-it" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/tool-use.html" hreflang="it" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/tool-use.html" hreflang="ja-jp" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/tool-use.html" hreflang="ja" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/tool-use.html" hreflang="ko-kr" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/tool-use.html" hreflang="ko" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/tool-use.html" hreflang="pt-br" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/tool-use.html" hreflang="pt" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_cn/nova/latest/userguide/tool-use.html" hreflang="zh-cn" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_tw/nova/latest/userguide/tool-use.html" hreflang="zh-tw" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html" hreflang="x-default" /><meta name="feedback-item" content="Bedrock" /><meta name="this_doc_product" content="Amazon Nova" /><meta name="this_doc_guide" content="User Guide for Amazon Nova" /><head xmlns="http://www.w3.org/1999/xhtml"> <script defer="" src="/assets/r/awsdocs-doc-page.2.0.0.js"></script><link href="/assets/r/awsdocs-doc-page.2.0.0.css" rel="stylesheet"/></head>
+<script defer="" id="awsc-panorama-bundle" type="text/javascript" src="https://prod.pa.cdn.uis.awsstatic.com/panorama-nav-init.js" data-config="{'appEntity':'aws-documentation','region':'us-east-1','service':'nova'}"></script><meta id="panorama-serviceSubSection" value="User Guide for Amazon Nova" /><meta id="panorama-serviceConsolePage" value="Tool use (function calling) with Amazon Nova" /><meta name="uiVersion" content="2024.10" /></head><body class="awsdocs awsui"><div class="awsdocs-container"><awsdocs-header></awsdocs-header><awsui-app-layout id="app-layout" class="awsui-util-no-gutters" ng-controller="ContentController as $ctrl" header-selector="awsdocs-header" navigation-hide="false" navigation-width="$ctrl.navWidth" navigation-open="$ctrl.navOpen" navigation-change="$ctrl.onNavChange($event)" tools-hide="$ctrl.hideTools" tools-width="$ctrl.toolsWidth" tools-open="$ctrl.toolsOpen" tools-change="$ctrl.onToolsChange($event)"><div id="guide-toc" dom-region="navigation"><awsdocs-toc></awsdocs-toc></div><div id="main-column" dom-region="content" tabindex="-1"><awsdocs-view class="awsdocs-view"><div id="awsdocs-content"><head><title>Tool use (function calling) with Amazon Nova - Amazon Nova</title><meta name="pdf" content="/pdfs/nova/latest/userguide/nova-ug.pdf#tool-use" /><meta name="rss" content="nova-ug.rss" /><meta name="forums" content="https://repost.aws/search/content?globalSearch=Amazon Nova" /><meta name="feedback" content="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use.html" /><meta name="feedback-yes" content="feedbackyes.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use.html" /><meta name="feedback-no" content="feedbackno.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use.html" /><meta name="keywords" content="Amazon Nova,foundation model,Nova,content creation models,text understanding,image understanding,document understanding,image generation,video generation,multimodal models,multimodal" /><script type="application/ld+json">
+{
+    "@context" : "https://schema.org",
+    "@type" : "BreadcrumbList",
+    "itemListElement" : [
+      {
+        "@type" : "ListItem",
+        "position" : 1,
+        "name" : "AWS",
+        "item" : "https://aws.amazon.com"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 2,
+        "name" : "Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/index.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 3,
+        "name" : "User Guide for Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 4,
+        "name" : "Tool use (function calling) with Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html"
+      }
+    ]
+}
+</script></head><body><div id="main"><div style="display: none"><a href="/pdfs/nova/latest/userguide/nova-ug.pdf#tool-use" target="_blank" rel="noopener noreferrer" title="Open PDF"></a></div><div id="breadcrumbs" class="breadcrumb"><a href="/index.html">Documentation</a><a href="/nova/index.html">Amazon Nova</a><a href="what-is-nova.html">User Guide for Amazon Nova</a></div><div id="page-toc-src"><a href="#tool-use-resources">Additional references</a></div><div id="main-content" class="awsui-util-container"><div id="main-col-body"><awsdocs-language-banner data-service="$ctrl.pageService"></awsdocs-language-banner><h1 class="topictitle" id="tool-use">Tool use (function calling) with Amazon Nova</h1><div class="awsdocs-page-header-container"><awsdocs-page-header></awsdocs-page-header><awsdocs-filter-selector id="awsdocs-filter-selector"></awsdocs-filter-selector></div><p>Tools are a way to provide external functionality to Amazon Nova such as an API call or a code function. This section will cover how you can define and integrate with tools when working with Amazon Nova models.</p><p>Tool use involves three high level steps:</p><div class="itemizedlist">
+         
+         
+         
+    <ul class="itemizedlist"><li class="listitem">
+            <p><b>User query</b> - You define the tools that Amazon Nova can use by providing a JSON schema that describes each tool's functionality and input requirements.</p>
+        </li><li class="listitem">
+            <p><b>Tool Selection</b> - When a user sends a message, Amazon Nova will analyze it to determine if a tool is necessary to generate a response. This is referred to as <code class="code">Auto</code> tool choice. See <a href="https://docs.aws.amazon.com/nova/latest/userguide/tool-choice.html">Choosing a tool</a> for more information. If Amazon Nova identifies a suitable tool, it will "call the tool" and return the name of the tool and the parameters to use.</p>
+            <p>You, as the developer, are responsible for executing the tool based on the model's request. This means you need to write the code that invokes the tool's functionality and processes the input parameters provided by the model.</p>
+            <div class="awsdocs-note"><div class="awsdocs-note-title"><awsui-icon name="status-info" variant="link"></awsui-icon><h6>Note</h6></div><div class="awsdocs-note-text"><p>Like all LLM responses, it is possible for Amazon Nova to hallucinate a tool call. It is the responsibility of you, the developer, to validate that the tool exists, inputs are formatted correctly, and the appropriate permissions are already in place.</p></div></div>
+        </li><li class="listitem">
+            <p><b>Return Results</b> - After executing the tool, you must send the results back to Amazon Nova in a structured format. Valid formats include JSON or a combination of text and images. This allows Amazon Nova to incorporate the tool's output into the final response to the user.</p>
+            <p>If there are any errors during the tool's execution, you can denote this in the tool response to Amazon Nova, allowing Amazon Nova to adjust its response accordingly.</p>
+        </li></ul></div><p>Consider a simple example of a calculator tool:</p><awsdocs-tabs><dl style="display: none">
+        <dt>User query</dt><dd tab-id="user-query">
+                <p>The first step in the tool calling workflow is the user query to Amazon Nova for the result of a math equation - 10 times 5. This query is sent as the prompt to Amazon Nova along with a tool specification that represents the calculator.</p>
+                
+                <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><code class="code" copy="true">user_query = "10*5"
+
+messages = [<span>{</span>
+    "role": "user",
+    "content": [<span>{</span>"text": user_query}]
+}]
+
+tool_config = <span>{</span>
+    "tools": [
+        <span>{</span>
+            "toolSpec": <span>{</span>
+                "name": "calculator", # Name of the tool
+                "description": "A calculator tool that can execute a math equation", # Concise description of the tool
+                "inputSchema": <span>{</span>
+                    "json": <span>{</span> 
+                        "type": "object",
+                        "properties": <span>{</span>
+                            "equation": <span>{</span> # The name of the parameter
+                                "type": "string", # parameter type: string/int/etc
+                                "description": "The full equation to evaluate" # Helpful description of the parameter
+                            }
+                        },
+                        "required": [ # List of all required parameters
+                            "equation"
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}</code></code></pre>
+            </dd>
+        <dt>Tool selection</dt><dd tab-id="tool-selection">
+                <p>Amazon Nova uses the context of the tool along with the user prompt to determine the necessary tool to use and the required configuration. This is returned as a part of the API response.</p>
+                
+                <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class="nohighlight"><code class="code" copy="true"><span>{</span>
+    "toolUse": <span>{</span>
+        "toolUseId": "tooluse_u7XTryCSReawd9lXwljzHQ", 
+        "name": "calculator", 
+        "input": <span>{</span>
+            "equation": "10*5"
+         }
+    }
+}</code></code></pre>
+                
+                <p>The application is responsible for executing the tool and storing the result.</p>
+                
+                <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class="nohighlight"><code class="code" copy="true">def calculator(equation: str):
+    return eval(equation)
+    
+tool_result = calculator("10*5")</code></code></pre>
+            </dd>
+        <dt>Return results</dt><dd tab-id="return-results">
+                <p>To return the result of the tool to Amazon Nova, the tool result is included in a new API request. Note that the tool use ID is consistent with the one returned from Amazon Nova in the previous response.</p>
+                
+                <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class="nohighlight"><code class="code" copy="true"><span>{</span> 
+    "toolResult": <span>{</span>
+        "toolUseId": "tooluse_u7XTryCSReawd9lXwljzHQ",
+        "content": [
+            <span>{</span>
+                "json": <span>{</span>
+                    "result": "50"
+                }
+            }
+        ],
+        "status": "success"
+    }
+}</code></code></pre>
+                
+                <div class="itemizedlist">
+                     
+                <ul class="itemizedlist"><li class="listitem">
+                        <p>Amazon Nova will use the full context of the messages, including the initial user query, the tool use, and tool result to determine the final response to the user. In this case, Amazon Nova will respond to the user that "10 times 5 is 50".</p>
+                    </li></ul></div>
+            </dd>
+    </dl></awsdocs-tabs><p>Amazon Nova allows tool use in both the Invoke and Converse API however, for full feature breadth we recommend using the <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html">Converse API</a> and will be using examples with this API moving forward.</p><div class="highlights"><h6>Topics</h6><ul><li><p><a href="./tool-use-definition.html">Defining a tool</a></p></li><li><p><a href="./tool-use-invocation.html">Invoking a tool</a></p></li><li><p><a href="./tool-choice.html">Choosing a tool</a></p></li><li><p><a href="./tool-use-results.html">Returning tool results</a></p></li><li><p><a href="./tool-use-error.html">Reporting an error</a></p></li><li><p><a href="#tool-use-resources">Additional references</a></p></li></ul></div>
+        <h2 id="tool-use-resources">Additional references</h2>
+
+        <div class="orderedlist">
+             
+             
+             
+             
+        <ol><li>
+                <p><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html">Use
+                        a tool to complete a model response</a></p>
+            </li><li>
+                <p><a href="./agents.html">Building AI agents with Amazon Nova</a></p>
+            </li><li>
+                <p><a href="./prompting-text-understanding.html">Text understanding prompting best
+            practices</a></p>
+            </li><li>
+                <p><a href="./prompting-tool-troubleshooting.html">Troubleshooting tool calls</a></p>
+            </li></ol></div>
+    <awsdocs-copyright class="copyright-print"></awsdocs-copyright><awsdocs-thumb-feedback right-edge="{{$ctrl.thumbFeedbackRightEdge}}"></awsdocs-thumb-feedback></div><noscript><div><div><div><div id="js_error_message"><p><img src="https://d1ge0kk1l5kms0.cloudfront.net/images/G/01/webservices/console/warning.png" alt="Warning" /> <strong>Javascript is disabled or is unavailable in your browser.</strong></p><p>To use the Amazon Web Services Documentation, Javascript must be enabled. Please refer to your browser's Help pages for instructions.</p></div></div></div></div></noscript><div id="main-col-footer" class="awsui-util-font-size-0"><div id="doc-conventions"><a target="_top" href="/general/latest/gr/docconventions.html">Document Conventions</a></div><div class="prev-next"><div id="previous" class="prev-link" accesskey="p" href="./prompting-speech-examples.html">Example custom prompts</div><div id="next" class="next-link" accesskey="n" href="./tool-use-definition.html">Defining a tool</div></div></div><awsdocs-page-utilities></awsdocs-page-utilities></div><div id="quick-feedback-yes" style="display: none;"><div class="title">Did this page help you? - Yes</div><div class="content"><p>Thanks for letting us know we're doing a good job!</p><p>If you've got a moment, please tell us what we did right so we can do more of it.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use.html"></awsui-button></p></div></div><div id="quick-feedback-no" style="display: none;"><div class="title">Did this page help you? - No</div><div class="content"><p>Thanks for letting us know this page needs work. We're sorry we let you down.</p><p>If you've got a moment, please tell us how we can make the documentation better.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use.html"></awsui-button></p></div></div></div></body></div></awsdocs-view><div class="page-loading-indicator" id="page-loading-indicator"><awsui-spinner size="large"></awsui-spinner></div></div><div id="tools-panel" dom-region="tools"><awsdocs-tools-panel id="awsdocs-tools-panel"></awsdocs-tools-panel></div></awsui-app-layout><awsdocs-cookie-banner class="doc-cookie-banner"></awsdocs-cookie-banner></div></body></html>

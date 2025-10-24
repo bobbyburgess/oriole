@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>Call a tool with the Converse API - Amazon Bedrock</title><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="assets_root" content="/assets" /><meta name="target_state" content="tool-use-inference-call" /><meta name="default_state" content="tool-use-inference-call" /><link rel="icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="shortcut icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="canonical" href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html" /><meta name="description" content="Shows how to call a tool (function) with the Amazon Bedrock API." /><meta name="deployment_region" content="IAD" /><meta name="product" content="Amazon Bedrock" /><meta name="guide" content="User Guide" /><meta name="abstract" content="User Guide for the Amazon Bedrock service." /><meta name="guide-locale" content="en_us" /><meta name="tocs" content="toc-contents.json" /><link rel="canonical" href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="id-id" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="id" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="de-de" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="de" /><link rel="alternative" href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="en-us" /><link rel="alternative" href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="en" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="es-es" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="es" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="fr-fr" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="fr" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="it-it" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="it" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="ja-jp" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="ja" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="ko-kr" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="ko" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="pt-br" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="pt" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_cn/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="zh-cn" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_tw/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="zh-tw" /><link rel="alternative" href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-inference-call.html" hreflang="x-default" /><meta name="feedback-folder" content="2d8c2a09-1dac-41bf-9893-c0333d272b2c" /><meta name="feedback-item" content="Bedrock" /><meta name="this_doc_product" content="Amazon Bedrock" /><meta name="this_doc_guide" content="User Guide" /><head xmlns="http://www.w3.org/1999/xhtml"> <script defer="" src="/assets/r/awsdocs-doc-page.2.0.0.js"></script><link href="/assets/r/awsdocs-doc-page.2.0.0.css" rel="stylesheet"/></head>
+<script defer="" id="awsc-panorama-bundle" type="text/javascript" src="https://prod.pa.cdn.uis.awsstatic.com/panorama-nav-init.js" data-config="{'appEntity':'aws-documentation','region':'us-east-1','service':'bedrock'}"></script><meta id="panorama-serviceSubSection" value="User Guide" /><meta id="panorama-serviceConsolePage" value="Call a tool with the Converse API" /></head><body class="awsdocs awsui"><div class="awsdocs-container"><awsdocs-header></awsdocs-header><awsui-app-layout id="app-layout" class="awsui-util-no-gutters" ng-controller="ContentController as $ctrl" header-selector="awsdocs-header" navigation-hide="false" navigation-width="$ctrl.navWidth" navigation-open="$ctrl.navOpen" navigation-change="$ctrl.onNavChange($event)" tools-hide="$ctrl.hideTools" tools-width="$ctrl.toolsWidth" tools-open="$ctrl.toolsOpen" tools-change="$ctrl.onToolsChange($event)"><div id="guide-toc" dom-region="navigation"><awsdocs-toc></awsdocs-toc></div><div id="main-column" dom-region="content" tabindex="-1"><awsdocs-view class="awsdocs-view"><div id="awsdocs-content"><head><title>Call a tool with the Converse API - Amazon Bedrock</title><meta name="pdf" content="/pdfs/bedrock/latest/userguide/bedrock-ug.pdf#tool-use-inference-call" /><meta name="rss" content="bedrock-ug.rss" /><meta name="forums" content="https://repost.aws/tags/TAQeKlaPaNRQ2tWB6P7KrMag" /><meta name="feedback" content="https://docs.aws.amazon.com/forms/aws-doc-feedback?feedback_destination_id=2d8c2a09-1dac-41bf-9893-c0333d272b2c&amp;topic_url=https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/tool-use-inference-call.html" /><meta name="feedback-yes" content="feedbackyes.html?topic_url=https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/tool-use-inference-call.html" /><meta name="feedback-no" content="feedbackno.html?topic_url=https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/tool-use-inference-call.html" /><meta name="keywords" content="Amazon Bedrock,bedrock,model inference,foundation models,prompts,text generation,embeddings,Tool use,Function calling,Converse API" /><script type="application/ld+json">
+{
+    "@context" : "https://schema.org",
+    "@type" : "BreadcrumbList",
+    "itemListElement" : [
+      {
+        "@type" : "ListItem",
+        "position" : 1,
+        "name" : "AWS",
+        "item" : "https://aws.amazon.com"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 2,
+        "name" : "Amazon Bedrock",
+        "item" : "https://docs.aws.amazon.com/bedrock/index.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 3,
+        "name" : "User Guide",
+        "item" : "https://docs.aws.amazon.com/bedrock/latest/userguide"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 4,
+        "name" : "Submit prompts and generate responses with model inference",
+        "item" : "https://docs.aws.amazon.com/bedrock/latest/userguide/inference.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 5,
+        "name" : "Use a tool to complete an Amazon Bedrock model response",
+        "item" : "https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 6,
+        "name" : "Call a tool with the Converse API",
+        "item" : "https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html"
+      }
+    ]
+}
+</script></head><body><div id="main"><div style="display: none"><a href="/pdfs/bedrock/latest/userguide/bedrock-ug.pdf#tool-use-inference-call" target="_blank" rel="noopener noreferrer" title="Open PDF"></a></div><div id="breadcrumbs" class="breadcrumb"><a href="/index.html">Documentation</a><a href="/bedrock/index.html">Amazon Bedrock</a><a href="what-is-bedrock.html">User Guide</a></div><div id="page-toc-src"><a href="#tool-use-send-tool-info">Step 1: Send the message and tool definition</a><a href="#tool-calllng-get-tool-request">Step 2: Get the tool request from the model</a><a href="#tool-calllng-make-tool-request">Step 3: Make the tool request for
+                    the model</a><a href="#tool-callling-get-model-response">Step 4: Get the model response</a></div><div id="main-content" class="awsui-util-container"><div id="main-col-body"><awsdocs-language-banner data-service="$ctrl.pageService"></awsdocs-language-banner><h1 class="topictitle" id="tool-use-inference-call">Call a tool with the Converse API</h1><div class="awsdocs-page-header-container"><awsdocs-page-header></awsdocs-page-header><awsdocs-filter-selector id="awsdocs-filter-selector"></awsdocs-filter-selector></div><p>To let a model use a tool to complete a response for a message, you send the message
+            and the definitions for one or more tools to the model. If the model determines that one
+            of the tools can help generate a response, it returns a request for you to use the tool
+            and send the tool results back to the model. The model then uses the results to generate
+            a response to the original message.</p><p>The following steps show how to use a tool with the Converse API. For example code, see
+            <a href="./tool-use-examples.html">Converse API tool use examples</a>.</p><div class="highlights" id="inline-topiclist"><h6>Topics</h6><ul><li><p><a href="#tool-use-send-tool-info">Step 1: Send the message and tool definition</a></p></li><li><p><a href="#tool-calllng-get-tool-request">Step 2: Get the tool request from the model</a></p></li><li><p><a href="#tool-calllng-make-tool-request">Step 3: Make the tool request for
+                    the model</a></p></li><li><p><a href="#tool-callling-get-model-response">Step 4: Get the model response</a></p></li></ul></div>
+            <h2 id="tool-use-send-tool-info">Step 1: Send the message and tool definition</h2>
+            
+            <p>To send the message and tool definition, you use the <a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html">Converse</a> or <a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html">ConverseStream</a> (for streaming responses) operations.   </p>
+            
+            <div class="awsdocs-note"><div class="awsdocs-note-title"><awsui-icon name="status-info" variant="link"></awsui-icon><h6>Note</h6></div><div class="awsdocs-note-text"><p>Meta has specific recommendations for creating prompts that use tools with
+                    Llama 3.1 (or later) models. For more information, see 
+                    <a href="https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1/#json-based-tool-calling" rel="noopener noreferrer" target="_blank"><span>JSON based tool calling</span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a> in the Meta documentation. </p></div></div>
+            
+            <p>The definition of the tool is a JSON schema that you pass in the <code class="code">toolConfig</code>
+                (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolConfiguration.html">ToolConfiguration</a>) request parameter to the <code class="code">Converse</code> operation. For
+                information about the schema, see <a href="https://json-schema.org/" rel="noopener noreferrer" target="_blank"><span>JSON schema</span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a>. The following is an example
+                schema for a tool that gets the most popular song played on a radio station. </p>
+            
+              
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class=""><span>{</span>
+    "tools": [
+        <span>{</span>
+            "toolSpec": <span>{</span>
+                "name": "top_song",
+                "description": "Get the most popular song played on a radio station.",
+                "inputSchema": <span>{</span>
+                    "json": <span>{</span>
+                        "type": "object",
+                        "properties": <span>{</span>
+                            "sign": <span>{</span>
+                                "type": "string",
+                                "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ and WKRP."
+                            }
+                        },
+                        "required": [
+                            "sign"
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}</code></pre>
+            
+ 
+            
+            
+            <p>In the same request, you also pass a user message in the <code class="code">messages</code> (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Message.html">Message</a>) request parameter.</p>
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class="">[
+    <span>{</span>
+        "role": "user",
+        "content": [
+            <span>{</span>
+                "text": "What is the most popular song on WZPZ?"
+            }
+        ]
+    }
+]</code></pre>
+            
+            <p>If you are using an Anthropic Claude 3 model, you can force the use of a tool
+                by specifying the <code class="code">toolChoice</code> (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html">ToolChoice</a>) field in the <code class="code">toolConfig</code> request parameter. Forcing
+                the use of a tool is useful for testing your tool during development. The following
+                example shows how to force the use of a tool called
+                <em>top_song</em>.</p> 
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class=""><span>{</span>"tool" : <span>{</span>"name" : "top_song"}}</code></pre>
+            
+            <p>For information about other parameters that
+                you can pass, see <a href="./conversation-inference.html">Carry out a conversation with the
+                Converse API operations</a>.</p>
+            
+            
+
+
+         
+            <h2 id="tool-calllng-get-tool-request">Step 2: Get the tool request from the model</h2>
+     
+            
+            <p>When you invoke the <code class="code">Converse</code> operation with the message and tool definition, the model uses
+                the tool definition to determine if the tool is needed to answer the
+                message. For example, if your chat app user sends
+                the message <em>What's the most popular song on WZPZ?</em>, the model matches the message with
+                the schema in the top_song tool definition and determines that the 
+                tool can help generate a response.</p>
+                
+                
+                <p>When the model decides that it needs a tool to generate a response, the model sets the <code class="code">stopReason</code>
+                response field to <code class="code">tool_use</code>. The response also identifies the tool (top_song) that the model
+                wants you to run and the radio station (WZPZ) that it wants you to query with the tool.
+                Information about the requested tool is in the message that the model returns in
+                the <code class="code">output</code> (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseOutput.html">ConverseOutput</a>) field. Specifically, the
+                    <code class="code">toolUse</code> (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolUseBlock.html">ToolUseBlock</a>) field. You use the
+                    <code class="code">toolUseId</code> field to identify the tool request in later calls.</p>
+            
+  
+            <p>The following example shows the response from <code class="code">Converse</code>
+                when you pass the message discussed in <a href="#tool-use-send-tool-info">Step 1: Send the message and tool definition</a>.</p>
+
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (json)--><code class="json "><span>{</span>
+    "output": <span>{</span>
+        "message": <span>{</span>
+            "role": "assistant",
+            "content": [
+                <span>{</span>
+                    "toolUse": <span>{</span>
+                        "toolUseId": "tooluse_kZJMlvQmRJ6eAyJE5GIl7Q",
+                        "name": "top_song",
+                        "input": <span>{</span>
+                            "sign": "WZPZ"
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    "stopReason": "tool_use"
+}
+</code></pre>
+
+
+        
+            <h2 id="tool-calllng-make-tool-request">Step 3: Make the tool request for
+                    the model</h2>
+            <p>From the <code class="code">toolUse</code> field in the model response, use the
+                    <code class="code">name</code> field to identify the name of the tool. Then call your
+                implementation of the tool and pass the input parameters from the <code class="code">input</code>
+                field. </p>
+            <p>Next, construct a user message that includes a <code class="code">toolResult</code> (<a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolResultBlock.html">ToolResultBlock</a>) content block. In the content block, include the
+                response from the tool and the ID for the tool request that you got in the previous
+                step. </p>
+
+
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (json)--><code class="json "><span>{</span>
+    "role": "user",
+    "content": [
+        <span>{</span>
+            "toolResult": <span>{</span>
+                "toolUseId": "tooluse_kZJMlvQmRJ6eAyJE5GIl7Q",
+                "content": [
+                    <span>{</span>
+                        "json": <span>{</span>
+                            "song": "Elemental Hotel",
+                            "artist": "8 Storey Hike"
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}
+</code></pre>
+
+            <p>Should an error occur in the tool, such as a request for a nonexistent radio
+                station, you can send error information to the model in the <code class="code">toolResult</code>
+                field. To indicate an error, specify <code class="code">error</code> in the <code class="code">status</code>
+                field. The following example error is for when the tool can't find the radio
+                station.</p>
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (json)--><code class="json "><span>{</span>
+    "role": "user",
+    "content": [
+        <span>{</span>
+            "toolResult": <span>{</span>
+                "toolUseId": "tooluse_kZJMlvQmRJ6eAyJE5GIl7Q",
+                "content": [
+                    <span>{</span>
+                        "text": "Station WZPA not found."
+                    }
+                ],
+                "status": "error"
+            }
+        }
+    ]
+}</code></pre>
+
+
+
+
+         
+            <h2 id="tool-callling-get-model-response">Step 4: Get the model response</h2>
+            <p>Continue the conversation with the model by including the user message that you
+                created in the previous step in a call to <code class="code">Converse</code>.
+                The model then generates a response that answers the original message (
+                <em>What's the most popular song on WZPZ?</em>) with the information that you
+                provided in the <code class="code">toolResult</code> field of the message.</p>
+            
+            <pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli ()--><code class=""><span>{</span>
+     "output": <span>{</span>
+        "message": <span>{</span>
+            "role": "assistant",
+            "content": [
+                <span>{</span>
+                    "text": "The most popular song on WZPZ is Elemental Hotel by 8 Storey Hike."
+                }
+            ]
+        }
+    },
+    "stopReason": "end_turn"
+ </code></pre>
+            
+            
+
+        <awsdocs-copyright class="copyright-print"></awsdocs-copyright><awsdocs-thumb-feedback right-edge="{{$ctrl.thumbFeedbackRightEdge}}"></awsdocs-thumb-feedback></div><noscript><div><div><div><div id="js_error_message"><p><img src="https://d1ge0kk1l5kms0.cloudfront.net/images/G/01/webservices/console/warning.png" alt="Warning" /> <strong>Javascript is disabled or is unavailable in your browser.</strong></p><p>To use the Amazon Web Services Documentation, Javascript must be enabled. Please refer to your browser's Help pages for instructions.</p></div></div></div></div></noscript><div id="main-col-footer" class="awsui-util-font-size-0"><div id="doc-conventions"><a target="_top" href="/general/latest/gr/docconventions.html">Document Conventions</a></div><div class="prev-next"><div id="previous" class="prev-link" accesskey="p" href="./tool-use.html">Use a tool to complete a model response</div><div id="next" class="next-link" accesskey="n" href="./tool-use-examples.html">Converse API tool use examples</div></div></div><awsdocs-page-utilities></awsdocs-page-utilities></div><div id="quick-feedback-yes" style="display: none;"><div class="title">Did this page help you? - Yes</div><div class="content"><p>Thanks for letting us know we're doing a good job!</p><p>If you've got a moment, please tell us what we did right so we can do more of it.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?feedback_destination_id=2d8c2a09-1dac-41bf-9893-c0333d272b2c&amp;topic_url=https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/tool-use-inference-call.html"></awsui-button></p></div></div><div id="quick-feedback-no" style="display: none;"><div class="title">Did this page help you? - No</div><div class="content"><p>Thanks for letting us know this page needs work. We're sorry we let you down.</p><p>If you've got a moment, please tell us how we can make the documentation better.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?feedback_destination_id=2d8c2a09-1dac-41bf-9893-c0333d272b2c&amp;topic_url=https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/tool-use-inference-call.html"></awsui-button></p></div></div></div></body></div></awsdocs-view><div class="page-loading-indicator" id="page-loading-indicator"><awsui-spinner size="large"></awsui-spinner></div></div><div id="tools-panel" dom-region="tools"><awsdocs-tools-panel id="awsdocs-tools-panel"></awsdocs-tools-panel></div></awsui-app-layout><awsdocs-cookie-banner class="doc-cookie-banner"></awsdocs-cookie-banner></div></body></html>

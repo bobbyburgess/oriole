@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>Defining a tool - Amazon Nova</title><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="assets_root" content="/assets" /><meta name="target_state" content="tool-use-definition" /><meta name="default_state" content="tool-use-definition" /><link rel="icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="shortcut icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html" /><meta name="description" content="A critical step in the tool calling workflow is defining the tool. The tool definition must include all of the necessary context to guide the model on when it is appropriate to invoke the tool." /><meta name="deployment_region" content="IAD" /><meta name="product" content="Amazon Nova" /><meta name="guide" content="User Guide for Amazon Nova" /><meta name="abstract" content="Insert abstract text" /><meta name="guide-locale" content="en_us" /><meta name="tocs" content="toc-contents.json" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/tool-use-definition.html" hreflang="id-id" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/tool-use-definition.html" hreflang="id" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/tool-use-definition.html" hreflang="de-de" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/tool-use-definition.html" hreflang="de" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html" hreflang="en-us" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html" hreflang="en" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/tool-use-definition.html" hreflang="es-es" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/tool-use-definition.html" hreflang="es" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/tool-use-definition.html" hreflang="fr-fr" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/tool-use-definition.html" hreflang="fr" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/tool-use-definition.html" hreflang="it-it" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/tool-use-definition.html" hreflang="it" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/tool-use-definition.html" hreflang="ja-jp" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/tool-use-definition.html" hreflang="ja" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/tool-use-definition.html" hreflang="ko-kr" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/tool-use-definition.html" hreflang="ko" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/tool-use-definition.html" hreflang="pt-br" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/tool-use-definition.html" hreflang="pt" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_cn/nova/latest/userguide/tool-use-definition.html" hreflang="zh-cn" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_tw/nova/latest/userguide/tool-use-definition.html" hreflang="zh-tw" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html" hreflang="x-default" /><meta name="feedback-item" content="Bedrock" /><meta name="this_doc_product" content="Amazon Nova" /><meta name="this_doc_guide" content="User Guide for Amazon Nova" /><head xmlns="http://www.w3.org/1999/xhtml"> <script defer="" src="/assets/r/awsdocs-doc-page.2.0.0.js"></script><link href="/assets/r/awsdocs-doc-page.2.0.0.css" rel="stylesheet"/></head>
+<script defer="" id="awsc-panorama-bundle" type="text/javascript" src="https://prod.pa.cdn.uis.awsstatic.com/panorama-nav-init.js" data-config="{'appEntity':'aws-documentation','region':'us-east-1','service':'nova'}"></script><meta id="panorama-serviceSubSection" value="User Guide for Amazon Nova" /><meta id="panorama-serviceConsolePage" value="Defining a tool" /><meta name="uiVersion" content="2024.10" /></head><body class="awsdocs awsui"><div class="awsdocs-container"><awsdocs-header></awsdocs-header><awsui-app-layout id="app-layout" class="awsui-util-no-gutters" ng-controller="ContentController as $ctrl" header-selector="awsdocs-header" navigation-hide="false" navigation-width="$ctrl.navWidth" navigation-open="$ctrl.navOpen" navigation-change="$ctrl.onNavChange($event)" tools-hide="$ctrl.hideTools" tools-width="$ctrl.toolsWidth" tools-open="$ctrl.toolsOpen" tools-change="$ctrl.onToolsChange($event)"><div id="guide-toc" dom-region="navigation"><awsdocs-toc></awsdocs-toc></div><div id="main-column" dom-region="content" tabindex="-1"><awsdocs-view class="awsdocs-view"><div id="awsdocs-content"><head><title>Defining a tool - Amazon Nova</title><meta name="pdf" content="/pdfs/nova/latest/userguide/nova-ug.pdf#tool-use-definition" /><meta name="rss" content="nova-ug.rss" /><meta name="forums" content="https://repost.aws/search/content?globalSearch=Amazon Nova" /><meta name="feedback" content="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use-definition.html" /><meta name="feedback-yes" content="feedbackyes.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use-definition.html" /><meta name="feedback-no" content="feedbackno.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use-definition.html" /><meta name="keywords" content="Amazon Nova,foundation model,Nova,content creation models,text understanding,image understanding,document understanding,image generation,video generation,multimodal models,multimodal" /><script type="application/ld+json">
+{
+    "@context" : "https://schema.org",
+    "@type" : "BreadcrumbList",
+    "itemListElement" : [
+      {
+        "@type" : "ListItem",
+        "position" : 1,
+        "name" : "AWS",
+        "item" : "https://aws.amazon.com"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 2,
+        "name" : "Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/index.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 3,
+        "name" : "User Guide for Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 4,
+        "name" : "Tool use (function calling) with Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 5,
+        "name" : "Defining a tool",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/tool-use.html"
+      }
+    ]
+}
+</script></head><body><div id="main"><div style="display: none"><a href="/pdfs/nova/latest/userguide/nova-ug.pdf#tool-use-definition" target="_blank" rel="noopener noreferrer" title="Open PDF"></a></div><div id="breadcrumbs" class="breadcrumb"><a href="/index.html">Documentation</a><a href="/nova/index.html">Amazon Nova</a><a href="what-is-nova.html">User Guide for Amazon Nova</a></div><div id="main-content" class="awsui-util-container"><div id="main-col-body"><awsdocs-language-banner data-service="$ctrl.pageService"></awsdocs-language-banner><h1 class="topictitle" id="tool-use-definition">Defining a tool</h1><div class="awsdocs-page-header-container"><awsdocs-page-header></awsdocs-page-header><awsdocs-filter-selector id="awsdocs-filter-selector"></awsdocs-filter-selector></div><p>A critical step in the tool calling workflow is defining the tool. The tool definition must include all of the necessary context to guide the model on when it is appropriate to invoke the tool.</p><p>To define a tool, create a tool configuration and pass it with the user message to the API. The <a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolConfiguration.html">tool configuration</a> schema expects an array of tools and optionally a tool choice parameter.</p><div class="awsdocs-note"><div class="awsdocs-note-title"><awsui-icon name="status-info" variant="link"></awsui-icon><h6>Note</h6></div><div class="awsdocs-note-text"><p>Amazon Nova supports the <code class="code">auto</code>, <code class="code">any</code>, and <code class="code">tool</code> options for <code class="code">toolChoice</code>. For more information, see <a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html">ToolChoice</a> in the Amazon Bedrock API documentation and <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html">Use a tool to complete an Amazon Bedrock model response</a>.</p></div></div><p>Here is an example of how to define a tool:</p><pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (JSON)--><code class="JSON "><code class="code" copy="true">tool_config = <span>{</span>
+    "tools": [
+        <span>{</span>
+            "toolSpec": <span>{</span>
+                "name": "top_song",
+                "description": "Get the most popular song played on a radio station.",
+                "inputSchema": <span>{</span>
+                    "json": <span>{</span>
+                        "type": "object",
+                        "properties": <span>{</span>
+                            "sign": <span>{</span>
+                                "type": "string",
+                                "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ, and WKRP."
+                            }
+                        },
+                        "required": [
+                            "sign"
+                        ]
+                    }
+                }
+            }
+        }
+    ],
+}</code></code></pre><p>The name, description, and the input schema must be explicit with the exact functionality of the tool. Ensure any key differentiators for when to use the tool are reflected in the tool configuration.</p><div class="awsdocs-note"><div class="awsdocs-note-title"><awsui-icon name="status-info" variant="link"></awsui-icon><h6>Note</h6></div><div class="awsdocs-note-text"><p>Amazon Nova understanding models currently support only a subset of JsonSchema functionality when used to define the <a href="https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolInputSchema.html">ToolInputSchema</a> in Converse API.</p><div class="itemizedlist">
+                 
+                 
+            <ul class="itemizedlist"><li class="listitem"><p>The top level schema must be of type <a href="https://json-schema.org/understanding-json-schema/reference/object" rel="noopener noreferrer" target="_blank"><span>Object</span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a>.</p></li><li class="listitem"><p>Only three fields are supported in the top-level Object - type (must be set to ‘object’), <a href="https://json-schema.org/understanding-json-schema/reference/object#properties" rel="noopener noreferrer" target="_blank"><span><code class="code">properties</code></span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a>, and <a href="https://json-schema.org/understanding-json-schema/reference/object#required" rel="noopener noreferrer" target="_blank"><span><code class="code">required</code></span><awsui-icon class="awsdocs-link-icon" name="external"></awsui-icon></a>.</p></li></ul></div></div></div><p>For tool calling, we recommend setting the temperature to 0 to enable greedy decoding.</p><p>Here is an example of calling a tool with the Converse API:</p><pre class="programlisting"><div class="code-btn-container"><div class="btn-copy-code" title="Copy"><awsui-icon name="copy"></awsui-icon></div></div><!--DEBUG: cli (Python)--><code class="Python "><code class="code" copy="true">import json
+import boto3
+
+client = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+input_text = "What is the most popular song on WZPZ?"
+
+messages = [<span>{</span>
+    "role": "user",
+    "content": [<span>{</span>"text": input_text}]
+}]
+
+inf_params = <span>{</span>"maxTokens": 1000, "temperature": 0}
+
+response = client.converse(
+    modelId="us.amazon.nova-lite-v1:0",
+    messages=messages,
+    toolConfig=tool_config,
+    inferenceConfig=inf_params
+)
+
+messages.append(response["output"]["message"])
+
+# Pretty print the response JSON.
+print("[Full Response]")
+print(json.dumps(response, indent=2))
+
+# Print the tool content for easy readability.
+tool = next(
+    block["toolUse"]
+    for block in response["output"]["message"]["content"]
+    if "toolUse" in block
+)
+print("\n[Tool Response]")
+print(tool)</code></code></pre><awsdocs-copyright class="copyright-print"></awsdocs-copyright><awsdocs-thumb-feedback right-edge="{{$ctrl.thumbFeedbackRightEdge}}"></awsdocs-thumb-feedback></div><noscript><div><div><div><div id="js_error_message"><p><img src="https://d1ge0kk1l5kms0.cloudfront.net/images/G/01/webservices/console/warning.png" alt="Warning" /> <strong>Javascript is disabled or is unavailable in your browser.</strong></p><p>To use the Amazon Web Services Documentation, Javascript must be enabled. Please refer to your browser's Help pages for instructions.</p></div></div></div></div></noscript><div id="main-col-footer" class="awsui-util-font-size-0"><div id="doc-conventions"><a target="_top" href="/general/latest/gr/docconventions.html">Document Conventions</a></div><div class="prev-next"><div id="previous" class="prev-link" accesskey="p" href="./tool-use.html">Tool use in Amazon Nova</div><div id="next" class="next-link" accesskey="n" href="./tool-use-invocation.html">Invoking a tool</div></div></div><awsdocs-page-utilities></awsdocs-page-utilities></div><div id="quick-feedback-yes" style="display: none;"><div class="title">Did this page help you? - Yes</div><div class="content"><p>Thanks for letting us know we're doing a good job!</p><p>If you've got a moment, please tell us what we did right so we can do more of it.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use-definition.html"></awsui-button></p></div></div><div id="quick-feedback-no" style="display: none;"><div class="title">Did this page help you? - No</div><div class="content"><p>Thanks for letting us know this page needs work. We're sorry we let you down.</p><p>If you've got a moment, please tell us how we can make the documentation better.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/tool-use-definition.html"></awsui-button></p></div></div></div></body></div></awsdocs-view><div class="page-loading-indicator" id="page-loading-indicator"><awsui-spinner size="large"></awsui-spinner></div></div><div id="tools-panel" dom-region="tools"><awsdocs-tools-panel id="awsdocs-tools-panel"></awsdocs-tools-panel></div></awsui-app-layout><awsdocs-cookie-banner class="doc-cookie-banner"></awsdocs-cookie-banner></div></body></html>

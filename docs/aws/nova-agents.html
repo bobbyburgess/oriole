@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+    <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>Building AI agents with Amazon Nova - Amazon Nova</title><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="assets_root" content="/assets" /><meta name="target_state" content="agents" /><meta name="default_state" content="agents" /><link rel="icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="shortcut icon" type="image/ico" href="/assets/images/favicon.ico" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/agents.html" /><meta name="description" content="Learn how to build AI agents with Amazon Nova." /><meta name="deployment_region" content="IAD" /><meta name="product" content="Amazon Nova" /><meta name="guide" content="User Guide for Amazon Nova" /><meta name="abstract" content="Insert abstract text" /><meta name="guide-locale" content="en_us" /><meta name="tocs" content="toc-contents.json" /><link rel="canonical" href="https://docs.aws.amazon.com/nova/latest/userguide/agents.html" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/agents.html" hreflang="id-id" /><link rel="alternative" href="https://docs.aws.amazon.com/id_id/nova/latest/userguide/agents.html" hreflang="id" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/agents.html" hreflang="de-de" /><link rel="alternative" href="https://docs.aws.amazon.com/de_de/nova/latest/userguide/agents.html" hreflang="de" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/agents.html" hreflang="en-us" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/agents.html" hreflang="en" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/agents.html" hreflang="es-es" /><link rel="alternative" href="https://docs.aws.amazon.com/es_es/nova/latest/userguide/agents.html" hreflang="es" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/agents.html" hreflang="fr-fr" /><link rel="alternative" href="https://docs.aws.amazon.com/fr_fr/nova/latest/userguide/agents.html" hreflang="fr" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/agents.html" hreflang="it-it" /><link rel="alternative" href="https://docs.aws.amazon.com/it_it/nova/latest/userguide/agents.html" hreflang="it" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/agents.html" hreflang="ja-jp" /><link rel="alternative" href="https://docs.aws.amazon.com/ja_jp/nova/latest/userguide/agents.html" hreflang="ja" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/agents.html" hreflang="ko-kr" /><link rel="alternative" href="https://docs.aws.amazon.com/ko_kr/nova/latest/userguide/agents.html" hreflang="ko" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/agents.html" hreflang="pt-br" /><link rel="alternative" href="https://docs.aws.amazon.com/pt_br/nova/latest/userguide/agents.html" hreflang="pt" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_cn/nova/latest/userguide/agents.html" hreflang="zh-cn" /><link rel="alternative" href="https://docs.aws.amazon.com/zh_tw/nova/latest/userguide/agents.html" hreflang="zh-tw" /><link rel="alternative" href="https://docs.aws.amazon.com/nova/latest/userguide/agents.html" hreflang="x-default" /><meta name="feedback-item" content="Bedrock" /><meta name="this_doc_product" content="Amazon Nova" /><meta name="this_doc_guide" content="User Guide for Amazon Nova" /><head xmlns="http://www.w3.org/1999/xhtml"> <script defer="" src="/assets/r/awsdocs-doc-page.2.0.0.js"></script><link href="/assets/r/awsdocs-doc-page.2.0.0.css" rel="stylesheet"/></head>
+<script defer="" id="awsc-panorama-bundle" type="text/javascript" src="https://prod.pa.cdn.uis.awsstatic.com/panorama-nav-init.js" data-config="{'appEntity':'aws-documentation','region':'us-east-1','service':'nova'}"></script><meta id="panorama-serviceSubSection" value="User Guide for Amazon Nova" /><meta id="panorama-serviceConsolePage" value="Building AI agents with Amazon Nova" /><meta name="uiVersion" content="2024.10" /></head><body class="awsdocs awsui"><div class="awsdocs-container"><awsdocs-header></awsdocs-header><awsui-app-layout id="app-layout" class="awsui-util-no-gutters" ng-controller="ContentController as $ctrl" header-selector="awsdocs-header" navigation-hide="false" navigation-width="$ctrl.navWidth" navigation-open="$ctrl.navOpen" navigation-change="$ctrl.onNavChange($event)" tools-hide="$ctrl.hideTools" tools-width="$ctrl.toolsWidth" tools-open="$ctrl.toolsOpen" tools-change="$ctrl.onToolsChange($event)"><div id="guide-toc" dom-region="navigation"><awsdocs-toc></awsdocs-toc></div><div id="main-column" dom-region="content" tabindex="-1"><awsdocs-view class="awsdocs-view"><div id="awsdocs-content"><head><title>Building AI agents with Amazon Nova - Amazon Nova</title><meta name="pdf" content="/pdfs/nova/latest/userguide/nova-ug.pdf#agents" /><meta name="rss" content="nova-ug.rss" /><meta name="forums" content="https://repost.aws/search/content?globalSearch=Amazon Nova" /><meta name="feedback" content="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/agents.html" /><meta name="feedback-yes" content="feedbackyes.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/agents.html" /><meta name="feedback-no" content="feedbackno.html?topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/agents.html" /><meta name="keywords" content="Amazon Nova,foundation model,Nova,content creation models,text understanding,image understanding,document understanding,image generation,video generation,multimodal models,multimodal" /><script type="application/ld+json">
+{
+    "@context" : "https://schema.org",
+    "@type" : "BreadcrumbList",
+    "itemListElement" : [
+      {
+        "@type" : "ListItem",
+        "position" : 1,
+        "name" : "AWS",
+        "item" : "https://aws.amazon.com"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 2,
+        "name" : "Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/index.html"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 3,
+        "name" : "User Guide for Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide"
+      },
+      {
+        "@type" : "ListItem",
+        "position" : 4,
+        "name" : "Building AI agents with Amazon Nova",
+        "item" : "https://docs.aws.amazon.com/nova/latest/userguide/agents.html"
+      }
+    ]
+}
+</script></head><body><div id="main"><div style="display: none"><a href="/pdfs/nova/latest/userguide/nova-ug.pdf#agents" target="_blank" rel="noopener noreferrer" title="Open PDF"></a></div><div id="breadcrumbs" class="breadcrumb"><a href="/index.html">Documentation</a><a href="/nova/index.html">Amazon Nova</a><a href="what-is-nova.html">User Guide for Amazon Nova</a></div><div id="page-toc-src"><a href="#agents-resources">Additional Resources</a></div><div id="main-content" class="awsui-util-container"><div id="main-col-body"><awsdocs-language-banner data-service="$ctrl.pageService"></awsdocs-language-banner><h1 class="topictitle" id="agents">Building AI agents with Amazon Nova</h1><div class="awsdocs-page-header-container"><awsdocs-page-header></awsdocs-page-header><awsdocs-filter-selector id="awsdocs-filter-selector"></awsdocs-filter-selector></div><p>An AI agent helps your end-users complete actions based on organization data and user
+        input. Agents orchestrate interactions between foundation models (FMs), data sources,
+        software applications, and user conversations. In addition, agents automatically call APIs
+        to take actions and invoke knowledge bases to supplement information for these actions.
+        Developers can save weeks of development effort by integrating agents to accelerate the
+        delivery of generative artificial intelligence (generative AI) applications .</p><p>With agents, you can automate tasks for your customers and answer questions for them. For
+        example, you can create an agent that helps customers process insurance claims or an agent
+        that helps customers make travel reservations. You don't have to provision capacity, manage
+        infrastructure, or write custom code. Amazon Nova manages prompt engineering, memory,
+        monitoring, encryption, user permissions, and API invocation.</p><p>For information on building AI agents in Amazon Bedrock, see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/agents.html">Bedrock
+        Agents</a>.</p><p>Agents perform the following tasks:</p><div class="itemizedlist">
+         
+         
+         
+         
+    <ul class="itemizedlist"><li class="listitem">
+            <p>Extend foundation models to understand user requests and break down the tasks that
+                the agent must perform into smaller steps.</p>
+        </li><li class="listitem">
+            <p>Collect additional information from a user through natural conversation.</p>
+        </li><li class="listitem">
+            <p>Take actions to fulfill a customer's request by making API calls to your company
+                systems.</p>
+        </li><li class="listitem">
+            <p>Augment performance and accuracy by querying data sources.</p>
+        </li></ul></div><div class="highlights"><h6>Topics</h6><ul><li><p><a href="./agents-use-nova.html">Using Amazon Nova as a foundation model in an AI
+                agent</a></p></li><li><p><a href="#agents-resources">Additional Resources</a></p></li></ul></div>
+        <h2 id="agents-resources">Additional Resources</h2>
+        <div class="orderedlist">
+             
+             
+             
+        <ol><li>
+                <p><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/agents.html">Automate tasks in your application using agents</a></p>
+            </li><li>
+                <p><a href="./tool-use.html">Tool use (function calling) with Amazon Nova</a></p>
+            </li><li>
+                <p><a href="./prompting-text-understanding.html">Text understanding prompting best
+            practices</a></p>
+            </li></ol></div>
+    <awsdocs-copyright class="copyright-print"></awsdocs-copyright><awsdocs-thumb-feedback right-edge="{{$ctrl.thumbFeedbackRightEdge}}"></awsdocs-thumb-feedback></div><noscript><div><div><div><div id="js_error_message"><p><img src="https://d1ge0kk1l5kms0.cloudfront.net/images/G/01/webservices/console/warning.png" alt="Warning" /> <strong>Javascript is disabled or is unavailable in your browser.</strong></p><p>To use the Amazon Web Services Documentation, Javascript must be enabled. Please refer to your browser's Help pages for instructions.</p></div></div></div></div></noscript><div id="main-col-footer" class="awsui-util-font-size-0"><div id="doc-conventions"><a target="_top" href="/general/latest/gr/docconventions.html">Document Conventions</a></div><div class="prev-next"><div id="previous" class="prev-link" accesskey="p" href="./rag-multimodal.html">Using Amazon Nova for Multimodal RAG</div><div id="next" class="next-link" accesskey="n" href="./agents-use-nova.html">Amazon Nova as an AI agent</div></div></div><awsdocs-page-utilities></awsdocs-page-utilities></div><div id="quick-feedback-yes" style="display: none;"><div class="title">Did this page help you? - Yes</div><div class="content"><p>Thanks for letting us know we're doing a good job!</p><p>If you've got a moment, please tell us what we did right so we can do more of it.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/agents.html"></awsui-button></p></div></div><div id="quick-feedback-no" style="display: none;"><div class="title">Did this page help you? - No</div><div class="content"><p>Thanks for letting us know this page needs work. We're sorry we let you down.</p><p>If you've got a moment, please tell us how we can make the documentation better.</p><p><awsui-button id="fblink" rel="noopener noreferrer" target="_blank" text="Feedback" click="linkClick($event)" href="https://docs.aws.amazon.com/forms/aws-doc-feedback?hidden_service_name=Bedrock&amp;topic_url=https://docs.aws.amazon.com/en_us/nova/latest/userguide/agents.html"></awsui-button></p></div></div></div></body></div></awsdocs-view><div class="page-loading-indicator" id="page-loading-indicator"><awsui-spinner size="large"></awsui-spinner></div></div><div id="tools-panel" dom-region="tools"><awsdocs-tools-panel id="awsdocs-tools-panel"></awsdocs-tools-panel></div></awsui-app-layout><awsdocs-cookie-banner class="doc-cookie-banner"></awsdocs-cookie-banner></div></body></html>

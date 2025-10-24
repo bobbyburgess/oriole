@@ -22,132 +22,30 @@ echo "Creating action group for agent: $AGENT_ID"
 echo "Using Lambda: $LAMBDA_ARN"
 echo ""
 
-# Create action group
+# Create temporary JSON file with the action group configuration
+# This avoids shell quoting issues with inline JSON
+cat > /tmp/action-group-$AGENT_ID.json << 'EOF'
+{
+  "agentId": "AGENT_ID_PLACEHOLDER",
+  "agentVersion": "DRAFT",
+  "actionGroupName": "oriole-maze-navigation",
+  "actionGroupExecutor": {
+    "lambda": "LAMBDA_ARN_PLACEHOLDER"
+  },
+  "apiSchema": {
+    "payload": "{\"openapi\": \"3.0.0\", \"info\": {\"title\": \"Maze Navigation API\", \"version\": \"1.0.0\", \"description\": \"Actions for navigating a 2D maze\"}, \"paths\": {\"/move_north\": {\"post\": {\"summary\": \"Move one step north\", \"description\": \"Attempt to move one step in the north direction (negative Y)\", \"operationId\": \"moveNorth\", \"requestBody\": {\"required\": true, \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"experimentId\": {\"type\": \"integer\", \"description\": \"The current experiment ID\"}, \"reasoning\": {\"type\": \"string\", \"description\": \"Your reasoning for this move\"}}, \"required\": [\"experimentId\"]}}}}, \"responses\": {\"200\": {\"description\": \"Move result\", \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\"}}}}}}}, \"/move_south\": {\"post\": {\"summary\": \"Move one step south\", \"description\": \"Attempt to move one step in the south direction (positive Y)\", \"operationId\": \"moveSouth\", \"requestBody\": {\"required\": true, \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"experimentId\": {\"type\": \"integer\"}, \"reasoning\": {\"type\": \"string\"}}, \"required\": [\"experimentId\"]}}}}, \"responses\": {\"200\": {\"description\": \"Move result\", \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\"}}}}}}}, \"/move_east\": {\"post\": {\"summary\": \"Move one step east\", \"description\": \"Attempt to move one step in the east direction (positive X)\", \"operationId\": \"moveEast\", \"requestBody\": {\"required\": true, \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"experimentId\": {\"type\": \"integer\"}, \"reasoning\": {\"type\": \"string\"}}, \"required\": [\"experimentId\"]}}}}, \"responses\": {\"200\": {\"description\": \"Move result\", \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\"}}}}}}}, \"/move_west\": {\"post\": {\"summary\": \"Move one step west\", \"description\": \"Attempt to move one step in the west direction (negative X)\", \"operationId\": \"moveWest\", \"requestBody\": {\"required\": true, \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"experimentId\": {\"type\": \"integer\"}, \"reasoning\": {\"type\": \"string\"}}, \"required\": [\"experimentId\"]}}}}, \"responses\": {\"200\": {\"description\": \"Move result\", \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\"}}}}}}}, \"/recall_all\": {\"post\": {\"summary\": \"Recall all previously seen tiles\", \"description\": \"Query spatial memory to see all tiles you have observed\", \"operationId\": \"recallAll\", \"requestBody\": {\"required\": true, \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"experimentId\": {\"type\": \"integer\"}, \"reasoning\": {\"type\": \"string\"}}, \"required\": [\"experimentId\"]}}}}, \"responses\": {\"200\": {\"description\": \"Memory recall result\", \"content\": {\"application/json\": {\"schema\": {\"type\": \"object\"}}}}}}}}}"
+  }
+}
+EOF
+
+# Replace placeholders with actual values
+sed -i '' "s/AGENT_ID_PLACEHOLDER/$AGENT_ID/g" /tmp/action-group-$AGENT_ID.json
+sed -i '' "s|LAMBDA_ARN_PLACEHOLDER|$LAMBDA_ARN|g" /tmp/action-group-$AGENT_ID.json
+
+# Create action group using the JSON file
 aws bedrock-agent create-agent-action-group \
-  --agent-id "$AGENT_ID" \
-  --agent-version DRAFT \
-  --action-group-name NavigationActions \
-  --action-group-executor lambda="$LAMBDA_ARN" \
-  --api-schema payload='{
-    "openapi": "3.0.0",
-    "info": {
-      "title": "Maze Navigation API",
-      "version": "1.0.0"
-    },
-    "paths": {
-      "/move_north": {
-        "post": {
-          "description": "Move one step north (negative Y)",
-          "operationId": "moveNorth",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "experimentId": {
-                      "type": "integer",
-                      "description": "The current experiment ID"
-                    },
-                    "reasoning": {
-                      "type": "string",
-                      "description": "Your reasoning for this move"
-                    }
-                  },
-                  "required": ["experimentId"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "/move_south": {
-        "post": {
-          "description": "Move one step south (positive Y)",
-          "operationId": "moveSouth",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "experimentId": {"type": "integer"},
-                    "reasoning": {"type": "string"}
-                  },
-                  "required": ["experimentId"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "/move_east": {
-        "post": {
-          "description": "Move one step east (positive X)",
-          "operationId": "moveEast",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "experimentId": {"type": "integer"},
-                    "reasoning": {"type": "string"}
-                  },
-                  "required": ["experimentId"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "/move_west": {
-        "post": {
-          "description": "Move one step west (negative X)",
-          "operationId": "moveWest",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "experimentId": {"type": "integer"},
-                    "reasoning": {"type": "string"}
-                  },
-                  "required": ["experimentId"]
-                }
-              }
-            }
-          }
-        }
-      },
-      "/recall_all": {
-        "post": {
-          "description": "Query spatial memory to see all tiles you have observed",
-          "operationId": "recallAll",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "experimentId": {"type": "integer"},
-                    "reasoning": {"type": "string"}
-                  },
-                  "required": ["experimentId"]
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }'
+  --cli-input-json file:///tmp/action-group-$AGENT_ID.json \
+  --profile bobby
 
 if [ $? -eq 0 ]; then
   echo ""
@@ -156,14 +54,15 @@ if [ $? -eq 0 ]; then
   echo "Now preparing agent (this makes the action group active)..."
 
   aws bedrock-agent prepare-agent \
-    --agent-id "$AGENT_ID"
+    --agent-id "$AGENT_ID" \
+    --profile bobby
 
   if [ $? -eq 0 ]; then
     echo ""
     echo "✅ Agent prepared successfully!"
     echo ""
     echo "Your agent is ready to use. You can now trigger experiments with:"
-    echo "  ./scripts/trigger-experiment.sh $AGENT_ID <alias-id> claude-3-5-haiku 1"
+    echo "  ./scripts/trigger-experiment.sh $AGENT_ID <alias-id> model-name 1"
   else
     echo ""
     echo "❌ Failed to prepare agent. Check AWS console for errors."
@@ -174,3 +73,6 @@ else
   echo "❌ Failed to create action group. Check AWS console for errors."
   exit 1
 fi
+
+# Clean up temp file
+rm -f /tmp/action-group-$AGENT_ID.json
