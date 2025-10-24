@@ -12,7 +12,10 @@ Technical insights, behavioral observations, and hard-won lessons from building 
 5. [Rate Limiting & Performance](#rate-limiting--performance)
 6. [Configuration Management](#configuration-management)
 7. [Cost Optimization](#cost-optimization)
-8. [Best Practices](#best-practices)
+8. [Nova Model Compatibility Issues](#nova-model-compatibility-issues)
+9. [Bedrock Agent Versioning & Deployment](#bedrock-agent-versioning--deployment)
+10. [Model Comparisons & Selection](#model-comparisons--selection)
+11. [Best Practices](#best-practices)
 
 ---
 
@@ -723,6 +726,619 @@ Trade-off: Higher vision may reduce learning value for AI research
 
 ---
 
+## Nova Model Compatibility Issues
+
+### The Problem: Nova Models + Bedrock Agents = Incompatible
+
+**Symptom:** Nova models (nova-micro, nova-lite, nova-pro) fail immediately when used with Bedrock Agents orchestration.
+
+**Error observed:**
+```
+DependencyFailedException: model timeout/error exception from Bedrock
+Failure code: 424
+Duration: ~1000ms (fails after exactly 1 second)
+```
+
+**What's happening:**
+```
+Bedrock Agent Event Trace:
+1. modelInvocationInput sent with temperature=0.0 ✅
+2. Followed immediately by failureTrace after 1008ms ❌
+3. failureCode: 424 (Dependency Failed)
+```
+
+### Root Cause: Orchestration Prompt Format
+
+Nova models have **specific requirements for tool calling**:
+1. Must use temperature = 0.0 (greedy decoding)
+2. Tool schemas must be in Converse API format
+3. Incompatible with Bedrock Agents' orchestration prompt structure
+
+**Proof that Nova works:**
+```python
+# Direct Converse API call with Nova Micro - SUCCESS
+response = client.converse(
+    modelId="us.amazon.nova-micro-v1:0",
+    messages=[{"role": "user", "content": [{"text": "What's the weather?"}]}],
+    toolConfig={
+        "tools": [{
+            "toolSpec": {
+                "name": "get_weather",
+                "description": "Get weather for a location",
+                "inputSchema": {"json": {...}}
+            }
+        }]
+    },
+    inferenceConfig={"maxTokens": 1000, "temperature": 0}
+)
+# Returns: stopReason="tool_use" ✅
+```
+
+The issue is **NOT** with Nova's tool calling capability - it's with how Bedrock Agents formats its orchestration prompts.
+
+### Attempted Solutions That Didn't Work
+
+#### 1. Prompt Override Configuration
+```javascript
+promptOverrideConfiguration: {
+  promptCreationMode: 'OVERRIDDEN',
+  basePromptTemplate: customPrompt,
+  inferenceConfiguration: {
+    temperature: 0,
+    maximumLength: 2048,
+    topP: 1,
+    topK: 250
+  }
+}
+```
+
+**Result:** Still failed with 424 after 1 second. Bedrock Agents adds orchestration wrapper that Nova can't parse.
+
+#### 2. Different Prompt Creation Modes
+- `DEFAULT`: AWS orchestration (failed)
+- `OVERRIDDEN`: Custom prompt (failed)
+
+**Result:** Mode doesn't matter - the underlying Bedrock Agents format is incompatible.
+
+### The Solution: Use Converse API Directly
+
+For Nova models, **bypass Bedrock Agents entirely** and use Converse API:
+
+```javascript
+const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
+
+// Define tools in Converse API format
+const toolConfig = {
+  tools: [
+    {
+      toolSpec: {
+        name: "move_north",
+        description: "Move one step north",
+        inputSchema: {
+          json: {
+            type: "object",
+            properties: {
+              reasoning: { type: "string" }
+            }
+          }
+        }
+      }
+    }
+    // ... more tools
+  ]
+};
+
+// Conversation loop
+while (!complete && turnCount < maxTurns) {
+  const response = await bedrockClient.send(new ConverseCommand({
+    modelId: "us.amazon.nova-micro-v1:0",
+    messages,
+    toolConfig,
+    inferenceConfig: { maxTokens: 2048, temperature: 0 }
+  }));
+
+  if (response.stopReason === 'tool_use') {
+    // Execute tools, add results to messages
+    // Continue loop
+  } else if (response.stopReason === 'end_turn') {
+    complete = true;
+  }
+}
+```
+
+**Pros:**
+- ✅ Nova models work perfectly
+- ✅ Direct control over conversation flow
+- ✅ Full token usage tracking
+- ✅ Works with any Bedrock model
+
+**Cons:**
+- ❌ Hits rate limits quickly (8-15 turns before ThrottlingException)
+- ❌ Tight loop within single Lambda invocation
+- ❌ Must implement tool routing yourself
+- ❌ Loses Bedrock Agents' managed orchestration
+
+### Architectural Trade-Off: Converse API vs Bedrock Agents
+
+| Feature | Bedrock Agents | Converse API |
+|---------|---------------|--------------|
+| **Nova Compatibility** | ❌ Fails with 424 | ✅ Works perfectly |
+| **Rate Limiting** | ✅ Natural spacing via Step Functions | ❌ Tight loop hits limits |
+| **Multi-Tool Burst Protection** | ✅ Handles internally (one API call) | ❌ Each tool call = separate API call |
+| **Turn Structure** | ✅ One turn per Lambda invocation | ❌ Multiple turns in one invocation |
+| **Tool Routing** | ✅ Managed action groups | ❌ Must implement yourself |
+| **Token Tracking** | ⚠️ Via event traces | ✅ Direct from response |
+| **Setup Complexity** | ⚠️ Console/CLI config needed | ✅ Pure code |
+
+### The Critical Advantage: Multi-Tool Call Bursts
+
+**The problem with Converse API:**
+
+When an agent decides to call multiple tools in sequence, each is a separate API call:
+
+```javascript
+// Converse API approach - Multiple API calls
+Turn 1:
+  ConverseCommand call 1 → model says "call move_north"
+  Execute move_north
+  ConverseCommand call 2 → model says "call recall_all"
+  Execute recall_all
+  ConverseCommand call 3 → model says "call move_east"
+  ... 8-9 rapid calls → ThrottlingException ❌
+```
+
+**How Bedrock Agents solves this:**
+
+```javascript
+// Bedrock Agents approach - ONE API call per turn
+Turn 1 (single InvokeAgent call):
+  1. Model decides → call move_north
+  2. Execute move_north Lambda
+  3. Model processes result → call recall_all
+  4. Execute recall_all Lambda
+  5. Model processes result → call move_east
+  ... 13 tool calls in one turn
+  6. Model decides to end turn
+
+Duration: ~13 seconds (all internal to Bedrock)
+Rate limit impact: 1 API call ✅
+```
+
+**Real example from experiment 73:**
+- **Turn 1:** 13 tool calls in one InvokeAgent call
+- **Turn 2:** 6 tool calls in one InvokeAgent call
+- **No throttling!** Because we only made 2 Bedrock API calls total
+
+**The key insight:**
+
+Our rate limit (6 RPM = 10 seconds between turns) controls the time between **turns**, not between individual tool calls. Bedrock's internal orchestration handles multiple tool invocations within a turn without exposing them as separate API calls.
+
+**Alternative solutions (without Bedrock Agents):**
+
+If you use Converse API directly, you'd need to implement:
+
+1. **Token bucket rate limiter** on the client side
+   - Track API calls per minute
+   - Block new calls when approaching limit
+   - Complex state management
+
+2. **Exponential backoff with retries**
+   - Catch ThrottlingException
+   - Wait increasingly longer periods
+   - Unreliable and slow
+
+3. **Queue tool calls with artificial delays**
+   - Add 1-2 second delay between each ConverseCommand
+   - Very slow (13 tool calls = 13-26 seconds just in delays)
+   - Wasteful when under limit
+
+4. **Accept throttling and abandon turn**
+   - Let it fail, retry the whole turn later
+   - Wasted tokens and time
+   - Poor user experience
+
+**None of these are as elegant as Bedrock Agents' approach.** This is arguably the single biggest architectural benefit of using Bedrock Agents over direct Converse API.
+
+**Design Philosophy: Proactive vs Reactive Rate Limiting**
+
+All the alternatives above share a fatal flaw: **they rely on hitting rate limits and reacting to them**. This violates a core design principle:
+
+> **Never design a system that depends on hitting limits and adjusting.**
+
+Why this matters:
+
+- **Reactive approaches are non-deterministic**: Sometimes work, sometimes fail, depending on timing
+- **Can't predict experiment duration**: Will it take 10 minutes or 30 minutes? Depends on throttling luck
+- **Error handling becomes business logic**: Catching exceptions shouldn't be part of normal operation
+- **Wastes resources**: Failed API calls cost tokens and time
+- **Unreliable for production**: Users can't trust the system
+
+**Bedrock Agents enables proactive design:**
+
+- Calculate safe rate limit (6 RPM for 10 RPM AWS limit)
+- Wait 10 seconds between turns (deterministic)
+- Agent makes as many tool calls as it wants per turn (unpredictable)
+- **Never hit the limit** because we control turn frequency, not tool frequency
+- **Predictable behavior**: Every experiment behaves the same way
+- **Production-ready**: Reliable, deterministic, trustworthy
+
+This is the difference between "hope it works and retry if it doesn't" versus "design it to never fail in the first place."
+
+### Recommendation
+
+**For Claude models:** Use Bedrock Agents
+- **Critical:** Handles multi-tool bursts automatically
+- Better rate limit handling
+- Managed orchestration
+- Natural pacing prevents throttling
+- **Worth the setup complexity**
+
+**For Nova models:** Accept they don't work well for this use case
+- Poor spatial reasoning (loops, no mental map)
+- Would require Converse API (loses burst protection)
+- Not worth the architectural complexity
+
+### Nova Spatial Reasoning Results
+
+**Experiment:** Nova Micro with working Converse API implementation (experiment ID 66)
+
+**Result:** 77 actions, agent stuck in loop
+
+**Observed behavior:**
+```
+Visited positions: (1,2) → (2,2) → (1,3) → (2,3) → (1,4)
+Then loops back:    (1,2) → (2,2) → (1,3) → (2,3) → (1,4)
+Then again:         (1,2) → (2,2) → (1,3) → (2,3) → (1,4)
+```
+
+**Reasoning paradox:**
+```
+Step 15: "avoid repeating the same path" → moves to (1,2)
+Step 16: "continue exploring" → moves to (2,2) [already visited]
+Step 17: "explore new areas" → moves to (1,3) [already visited]
+```
+
+**Analysis:** Nova Micro can call tools but lacks spatial reasoning. No mental map building despite having access to recall_all.
+
+---
+
+## Bedrock Agent Versioning & Deployment
+
+### Understanding Agent Versions
+
+AWS Bedrock Agents use a two-tier system:
+
+**DRAFT:**
+- Active development version
+- Where you add/modify action groups
+- Where you update prompts and configuration
+- NOT accessible via aliases
+- Cannot be invoked in production
+
+**Numbered Versions (1, 2, 3, ...):**
+- Immutable snapshots created from DRAFT
+- What aliases point to
+- What you invoke in production
+- Created automatically when you create an alias
+- Cannot be modified after creation
+
+**Aliases:**
+- Named pointers (e.g., "prod", "test")
+- Route to specific numbered versions
+- Can be updated to point to different versions
+- **Cannot point to DRAFT**
+
+### The Version Creation Problem
+
+**Challenge:** There is NO CLI command to create a version from DRAFT.
+
+**Available commands:**
+```bash
+aws bedrock-agent list-agent-versions       # List existing versions
+aws bedrock-agent get-agent-version         # Get version details
+aws bedrock-agent delete-agent-version      # Delete a version
+aws bedrock-agent create-agent-version      # ❌ DOES NOT EXIST
+```
+
+**Why this is problematic:**
+1. CDK creates agent and initial alias (points to version 1)
+2. You add action groups via CLI to DRAFT
+3. Action groups are in DRAFT, but alias points to version 1 (no action groups)
+4. Agent doesn't call tools because alias isn't using DRAFT
+5. Can't update alias to point to DRAFT (not allowed)
+6. Can't create version 2 from DRAFT (no command)
+
+### The Workaround: Create Temporary Alias
+
+**Solution:** Creating a new alias automatically creates a numbered version from DRAFT.
+
+**Step-by-step:**
+
+```bash
+# 1. Agent starts at version 1 (created by CDK)
+aws bedrock-agent list-agent-versions --agent-id AGENT_ID
+# Output: version 1 (PREPARED)
+
+# 2. Add action groups to DRAFT
+./scripts/setup-agent-actions.sh AGENT_ID LAMBDA_ARN
+
+# 3. Prepare DRAFT (packages latest changes)
+aws bedrock-agent prepare-agent --agent-id AGENT_ID
+
+# 4. Create temporary alias - this creates version 2 from DRAFT!
+aws bedrock-agent create-agent-alias \
+  --agent-id AGENT_ID \
+  --agent-alias-name temp \
+  --description "Temporary alias to create version 2"
+
+# 5. Verify version 2 was created
+aws bedrock-agent list-agent-versions --agent-id AGENT_ID
+# Output: version 1, version 2 (PREPARED)
+
+# 6. Update prod alias to use version 2
+aws bedrock-agent update-agent-alias \
+  --agent-id AGENT_ID \
+  --agent-alias-id PROD_ALIAS_ID \
+  --agent-alias-name prod \
+  --routing-configuration agentVersion=2
+
+# 7. Delete temporary alias (optional)
+aws bedrock-agent delete-agent-alias \
+  --agent-id AGENT_ID \
+  --agent-alias-id TEMP_ALIAS_ID
+```
+
+### Common Pitfalls
+
+#### 1. Alias Points to Old Version
+
+**Symptom:** Agent doesn't call tools, or uses old prompt/configuration
+
+**Diagnosis:**
+```bash
+aws bedrock-agent get-agent-alias \
+  --agent-id AGENT_ID \
+  --agent-alias-id ALIAS_ID \
+  --query 'agentAlias.routingConfiguration'
+```
+
+**Fix:** Update alias to point to newer version (see workaround above)
+
+#### 2. Action Groups on Wrong Version
+
+**Symptom:** `list-agent-action-groups` shows empty for your version
+
+**Check DRAFT:**
+```bash
+aws bedrock-agent list-agent-action-groups \
+  --agent-id AGENT_ID \
+  --agent-version DRAFT
+```
+
+**Check numbered version:**
+```bash
+aws bedrock-agent list-agent-action-groups \
+  --agent-id AGENT_ID \
+  --agent-version 2
+```
+
+**Fix:** If action groups only in DRAFT, create new version (see workaround)
+
+#### 3. Lambda Permission Missing for New Agent
+
+**Symptom:**
+```
+DependencyFailedException: Access denied while invoking Lambda function
+```
+
+**Check permissions:**
+```bash
+aws lambda get-policy --function-name ACTION_ROUTER_LAMBDA
+```
+
+**Fix:**
+```bash
+aws lambda add-permission \
+  --function-name ACTION_ROUTER_LAMBDA \
+  --statement-id AllowBedrockAgent-AGENT_NAME \
+  --action lambda:InvokeFunction \
+  --principal bedrock.amazonaws.com \
+  --source-arn "arn:aws:bedrock:REGION:ACCOUNT:agent/AGENT_ID"
+```
+
+### Best Practices for Agent Versioning
+
+1. **Always prepare-agent before creating versions**
+   ```bash
+   aws bedrock-agent prepare-agent --agent-id AGENT_ID
+   ```
+
+2. **Verify action groups are in DRAFT before versioning**
+   ```bash
+   aws bedrock-agent list-agent-action-groups \
+     --agent-id AGENT_ID \
+     --agent-version DRAFT
+   ```
+
+3. **Document version history**
+   ```bash
+   # version 1: Initial setup, no action groups
+   # version 2: Added maze navigation action groups
+   # version 3: Updated prompt for better spatial reasoning
+   ```
+
+4. **Keep temp aliases for debugging**
+   - Don't delete immediately
+   - Can test new versions before updating prod
+
+5. **Check alias routing after updates**
+   ```bash
+   aws bedrock-agent get-agent-alias --agent-id AGENT_ID --agent-alias-id ALIAS_ID \
+     | jq '.agentAlias.routingConfiguration'
+   ```
+
+---
+
+## Model Comparisons & Selection
+
+### Cost per 1000 Maze Steps
+
+Based on actual token usage from experiments:
+
+| Model | Input per Mtok | Output per Mtok | Cost per 1000 Steps | Relative Cost |
+|-------|----------------|-----------------|---------------------|---------------|
+| Claude 3.5 Sonnet | $3.00 | $15.00 | ~$3.36 | 15x |
+| Claude 3.5 Haiku | $0.80 | $4.00 | ~$0.90 | 4x |
+| **Claude 3 Haiku** | **$0.25** | **$1.25** | **~$0.22** | **1x** ✅ |
+| Nova Micro | $0.035 | $0.14 | N/A | ❌ Poor reasoning |
+| Nova Lite | $0.06 | $0.24 | N/A | ❌ Untested |
+| Nova Pro | $0.80 | $3.20 | N/A | ❌ Untested |
+
+**Calculation example (Claude 3 Haiku):**
+- Average per action: ~1,500 input tokens, 150 output tokens
+- Input cost: (1,500 / 1,000,000) × $0.25 = $0.000375
+- Output cost: (150 / 1,000,000) × $1.25 = $0.0001875
+- Total per action: ~$0.00056
+- Per 1000 actions: ~$0.22
+
+### Rate Limit Configurations
+
+| Model | AWS Limit (RPM) | Configured Limit | Wait Between Turns |
+|-------|----------------|------------------|-------------------|
+| Claude 3.5 Haiku | 10 | 6 (60%) | 10 seconds |
+| Claude 3 Haiku | 10 | 8 (80%) | 7.5 seconds |
+| Nova Micro | Unknown | 9 | 6.7 seconds |
+| Nova Lite | Unknown | 9 | 6.7 seconds |
+| Nova Pro | Unknown | 9 | 6.7 seconds |
+
+**Why not 100% of AWS limit?**
+- Execution overhead (2-4 seconds per call)
+- Network timing jitter
+- Clock synchronization variance
+- Better to never hit limits than squeeze maximum throughput
+
+**Finding your rate limits:**
+```bash
+aws service-quotas list-service-quotas \
+  --service-code bedrock \
+  --region us-west-2 \
+  --query "Quotas[?contains(QuotaName, 'Claude 3 Haiku')]"
+```
+
+### Spatial Reasoning Comparison
+
+From actual experiments:
+
+**Claude 3.5 Sonnet (Experiment 67):**
+- 8 actions before ThrottlingException
+- Intelligent exploration: straight line east from (2,1) to (6,1)
+- Purposeful navigation with clear strategy
+- **Verdict:** ✅ Excellent but expensive and hits rate limits
+
+**Claude 3 Haiku (Experiment 72):**
+- 17 actions (ongoing)
+- Systematic exploration with recall_all first
+- Successful navigation with sensible backtracking
+- Cost so far: $0.0019 (~11 cents per 1000 steps)
+- **Verdict:** ✅ Best balance of cost and capability
+
+**Nova Micro (Experiment 66):**
+- 77 actions, got stuck in loop
+- Visited same 5 positions repeatedly
+- Reasoning says "avoid repeating" then repeats immediately
+- No mental map building
+- **Verdict:** ❌ Poor spatial reasoning despite tool calling working
+
+### Model Selection Guide
+
+**For production/large-scale experiments:**
+→ **Claude 3 Haiku**
+- 3-4x cheaper than Haiku 3.5
+- Good spatial reasoning
+- Works with Bedrock Agents (no rate limit issues)
+- 8 RPM configured rate
+
+**For highest quality results:**
+→ **Claude 3.5 Sonnet** (with throttle workarounds)
+- Best reasoning capability
+- Requires 6 RPM rate limit (10s between turns)
+- 15x cost vs Claude 3 Haiku
+- Use for final evaluation runs only
+
+**Not recommended:**
+→ **Nova models**
+- Incompatible with Bedrock Agents
+- Poor spatial reasoning (Nova Micro tested)
+- Converse API architecture hits rate limits
+- Not worth architectural complexity
+
+### Adding New Models
+
+When adding a new model to Oriole:
+
+1. **Update CDK stack:**
+```javascript
+const claude3Agent = new BedrockAgentConstruct(this, 'Claude3HaikuAgent', {
+  agentName: 'oriole-claude-3-haiku',
+  modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+  instruction: '...',
+  actionLambda: actionRouterLambda
+});
+```
+
+2. **Add pricing to Parameter Store:**
+```bash
+aws ssm put-parameter \
+  --name /oriole/pricing/models \
+  --value '{
+    "claude-3-haiku": {
+      "input_per_mtok": 0.25,
+      "output_per_mtok": 1.25
+    },
+    ...
+  }' \
+  --overwrite
+```
+
+3. **Configure rate limit:**
+```bash
+aws ssm put-parameter \
+  --name /oriole/models/claude-3-haiku/rate-limit-rpm \
+  --value "8" \
+  --type String
+```
+
+4. **Update invoke-agent.js model mapping:**
+```javascript
+function getModelId(modelName) {
+  const modelMap = {
+    'claude-3-haiku': 'anthropic.claude-3-haiku-20240307-v1:0',
+    // ...
+  };
+  return modelMap[modelName] || modelName;
+}
+```
+
+5. **Deploy and configure:**
+```bash
+npm run deploy
+./scripts/setup-agent-actions.sh AGENT_ID LAMBDA_ARN
+```
+
+6. **Create version via temp alias** (see Versioning section above)
+
+7. **Add Lambda permissions:**
+```bash
+aws lambda add-permission \
+  --function-name ACTION_ROUTER \
+  --statement-id AllowBedrockAgent-AGENT_NAME \
+  --action lambda:InvokeFunction \
+  --principal bedrock.amazonaws.com \
+  --source-arn "arn:aws:bedrock:REGION:ACCOUNT:agent/AGENT_ID"
+```
+
+---
+
 ## Best Practices
 
 ### 1. Always Log Actions with Full Context
@@ -904,9 +1520,15 @@ The biggest lesson? **Don't fight AWS rate limits with retries**. Embrace them w
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2025-10-23
+**Document Version:** 3.0
+**Last Updated:** 2025-10-24
 **Author:** Claude Code Session (Debugging & Implementation)
+**Major Changes in v3.0:**
+- Added comprehensive Nova model compatibility analysis
+- Documented Bedrock Agent versioning challenges and workarounds
+- Added detailed model comparison and cost analysis
+- Documented Claude 3 Haiku setup and configuration
+- Added Converse API vs Bedrock Agents trade-off analysis
 **Major Changes in v2.0:**
 - Added SQS FIFO queue architecture for experiment serialization
 - Documented fail-fast approach (no retries)

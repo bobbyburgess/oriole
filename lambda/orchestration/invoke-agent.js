@@ -1,17 +1,23 @@
-// Invoke Agent Lambda - Converse API version
-// Uses Bedrock Converse API directly instead of Bedrock Agents
-// This works with Nova models which have compatibility issues with Bedrock Agents orchestration
+// Invoke Agent Lambda
+// Calls AWS Bedrock Agent to perform one iteration of maze navigation
+//
+// How it works:
+// 1. Receives current experiment state (position, experiment ID, etc.) from check-progress
+// 2. Constructs a prompt telling the agent where it is and what it can do
+// 3. Invokes Bedrock Agent with the prompt
+// 4. Agent uses its action group tools (move_north, recall_all, etc.) via the router Lambda
+// 5. Returns after agent completes its turn (may be multiple tool calls)
+//
+// Important: Each invocation is stateless from the agent's perspective
+// The sessionId ensures conversation continuity, but position must be provided explicitly
 
-const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { BedrockAgentRuntimeClient, InvokeAgentCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const { handleMove } = require('../actions/move_handler');
-const recallAll = require('../actions/recall_all');
-const { acquireExperimentLock, releaseExperimentLock } = require('../shared/db');
 
-const bedrockClient = new BedrockRuntimeClient();
+const bedrockClient = new BedrockAgentRuntimeClient();
 const ssmClient = new SSMClient();
 
-// Cache prompts and pricing
+// Cache prompts and pricing to avoid repeated SSM calls
 const promptCache = {};
 let pricingCache = null;
 
@@ -19,9 +25,11 @@ async function getPrompt(promptVersion) {
   if (promptCache[promptVersion]) {
     return promptCache[promptVersion];
   }
+
   const command = new GetParameterCommand({
     Name: `/oriole/prompts/${promptVersion}`
   });
+
   const response = await ssmClient.send(command);
   promptCache[promptVersion] = response.Parameter.Value;
   return promptCache[promptVersion];
@@ -31,9 +39,11 @@ async function getPricing() {
   if (pricingCache) {
     return pricingCache;
   }
+
   const command = new GetParameterCommand({
     Name: '/oriole/pricing/models'
   });
+
   const response = await ssmClient.send(command);
   pricingCache = JSON.parse(response.Parameter.Value);
   return pricingCache;
@@ -45,158 +55,10 @@ function calculateCost(modelName, inputTokens, outputTokens, pricing) {
     console.warn(`No pricing found for model: ${modelName}`);
     return 0;
   }
+
   const inputCost = (inputTokens / 1000000) * modelPricing.input_per_mtok;
   const outputCost = (outputTokens / 1000000) * modelPricing.output_per_mtok;
   return inputCost + outputCost;
-}
-
-// Define tool schemas for Converse API
-// These match the actions previously handled by Bedrock Agents action groups
-const TOOL_CONFIG = {
-  tools: [
-    {
-      toolSpec: {
-        name: "move_north",
-        description: "Move one step north (up) in the maze. Returns your new position and what you can see.",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              reasoning: {
-                type: "string",
-                description: "Your reasoning for why you want to move north"
-              }
-            },
-            required: ["reasoning"]
-          }
-        }
-      }
-    },
-    {
-      toolSpec: {
-        name: "move_south",
-        description: "Move one step south (down) in the maze. Returns your new position and what you can see.",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              reasoning: {
-                type: "string",
-                description: "Your reasoning for why you want to move south"
-              }
-            },
-            required: ["reasoning"]
-          }
-        }
-      }
-    },
-    {
-      toolSpec: {
-        name: "move_east",
-        description: "Move one step east (right) in the maze. Returns your new position and what you can see.",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              reasoning: {
-                type: "string",
-                description: "Your reasoning for why you want to move east"
-              }
-            },
-            required: ["reasoning"]
-          }
-        }
-      }
-    },
-    {
-      toolSpec: {
-        name: "move_west",
-        description: "Move one step west (left) in the maze. Returns your new position and what you can see.",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              reasoning: {
-                type: "string",
-                description: "Your reasoning for why you want to move west"
-              }
-            },
-            required: ["reasoning"]
-          }
-        }
-      }
-    },
-    {
-      toolSpec: {
-        name: "recall_all",
-        description: "Recall all observations you've made so far in this experiment. Returns a summary of everywhere you've been and what you saw.",
-        inputSchema: {
-          json: {
-            type: "object",
-            properties: {
-              reasoning: {
-                type: "string",
-                description: "Your reasoning for why you want to recall your observations"
-              }
-            },
-            required: ["reasoning"]
-          }
-        }
-      }
-    }
-  ]
-};
-
-// Execute a tool call by invoking the appropriate action handler
-async function executeTool(toolName, toolInput, experimentId, turnNumber) {
-  console.log(`Executing tool: ${toolName}`, toolInput);
-
-  const { reasoning } = toolInput;
-
-  // Acquire lock before executing any action
-  await acquireExperimentLock(experimentId);
-  console.log(`Acquired lock for experiment ${experimentId}`);
-
-  try {
-    let result;
-
-    if (toolName.startsWith('move_')) {
-      const direction = toolName.replace('move_', '');
-      result = await handleMove(direction, { experimentId, reasoning, turnNumber });
-    } else if (toolName === 'recall_all') {
-      result = await recallAll.handler({ experimentId, reasoning, turnNumber });
-    } else {
-      throw new Error(`Unknown tool: ${toolName}`);
-    }
-
-    // Parse the response body
-    const responseBody = typeof result.body === 'string'
-      ? JSON.parse(result.body)
-      : result.body;
-
-    return {
-      success: result.statusCode === 200,
-      data: responseBody
-    };
-
-  } finally {
-    await releaseExperimentLock(experimentId);
-    console.log(`Released lock for experiment ${experimentId}`);
-  }
-}
-
-// Map model names to Bedrock model IDs
-function getModelId(modelName) {
-  const modelMap = {
-    'claude-3-5-sonnet': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
-    'claude-3-5-haiku': 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
-    'claude-3-opus': 'anthropic.claude-3-opus-20240229-v1:0',
-    'nova-micro': 'us.amazon.nova-micro-v1:0',
-    'nova-lite': 'us.amazon.nova-lite-v1:0',
-    'nova-pro': 'us.amazon.nova-pro-v1:0'
-  };
-
-  return modelMap[modelName] || modelName;
 }
 
 exports.handler = async (event) => {
@@ -205,7 +67,8 @@ exports.handler = async (event) => {
   try {
     const {
       experimentId,
-      modelName,
+      agentId,
+      agentAliasId,
       goalDescription,
       currentX,
       currentY,
@@ -213,175 +76,132 @@ exports.handler = async (event) => {
       turnNumber = 1
     } = event;
 
-    console.log(`Starting turn ${turnNumber} for experiment ${experimentId} at (${currentX}, ${currentY}) using ${modelName}`);
+    console.log(`Agent invocation for experiment ${experimentId} at position (${currentX}, ${currentY}) using prompt ${promptVersion}`);
 
-    // Get the prompt text
+    // Get the prompt text for this version
     const promptText = await getPrompt(promptVersion);
 
-    // Construct initial user message
-    const initialPrompt = `You are continuing a maze navigation experiment.
+    // Construct the input for this iteration
+    // Critical: We must explicitly tell the agent its current position
+    // The agent has no memory of position across orchestration loop iterations
+    const input = `You are continuing a maze navigation experiment.
 
 Experiment ID: ${experimentId}
 Your Current Position: (${currentX}, ${currentY})
 Goal: ${goalDescription}
 
-${promptText}`;
+${promptText}
 
-    // Initialize conversation
-    const messages = [
-      {
-        role: "user",
-        content: [{ text: initialPrompt }]
+When you call any action, always include experimentId=${experimentId} in your request.`;
+
+    console.log('Invoking agent with input:', input);
+    console.log(`Turn number: ${turnNumber}`);
+
+    // Invoke the Bedrock Agent
+    // SessionId keeps conversation context (agent can reference previous tool results)
+    // But position must be in prompt - agent doesn't track spatial state internally
+    // SessionAttributes pass through to action handlers via router.js
+    const command = new InvokeAgentCommand({
+      agentId,
+      agentAliasId,
+      sessionId: `experiment-${experimentId}`, // Consistent session for conversation continuity
+      inputText: input,
+      enableTrace: true, // Enable trace to get token usage and reasoning steps
+      sessionState: {
+        sessionAttributes: {
+          experimentId: experimentId.toString(),
+          turnNumber: turnNumber.toString()
+        }
       }
-    ];
+    });
 
-    // Get model ID
-    const modelId = getModelId(modelName);
+    const startTime = Date.now();
+    console.log(`[TIMING] Starting Bedrock Agent invocation at ${new Date().toISOString()}`);
 
-    // Inference config - temperature 0 for tool calling
-    const inferenceConfig = {
-      maxTokens: 2048,
-      temperature: 0
-    };
+    const response = await bedrockClient.send(command);
 
-    // Track tokens across all turns
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let conversationComplete = false;
-    let finalResponse = '';
-    let turnCount = 0;
-    const maxTurns = 20; // Prevent infinite loops
+    console.log(`[TIMING] Bedrock client.send() completed in ${Date.now() - startTime}ms`);
 
-    console.log(`Starting Converse API loop with model ${modelId}`);
+    // Process streaming response from agent
+    // The agent may invoke multiple tools before responding
+    // All tool invocations happen synchronously during this call
+    let completion = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let chunkCount = 0;
+    const streamStartTime = Date.now();
 
-    // Main conversation loop
-    while (!conversationComplete && turnCount < maxTurns) {
-      turnCount++;
-      console.log(`\n=== Conversation turn ${turnCount} ===`);
+    console.log(`[TIMING] Starting to process stream chunks`);
 
-      const command = new ConverseCommand({
-        modelId,
-        messages,
-        toolConfig: TOOL_CONFIG,
-        inferenceConfig
-      });
-
-      const startTime = Date.now();
-      const response = await bedrockClient.send(command);
-      const elapsed = Date.now() - startTime;
-
-      console.log(`Model response received in ${elapsed}ms`);
-      console.log(`Stop reason: ${response.stopReason}`);
-
-      // Track tokens
-      if (response.usage) {
-        totalInputTokens += response.usage.inputTokens || 0;
-        totalOutputTokens += response.usage.outputTokens || 0;
-        console.log(`Tokens this turn: ${response.usage.inputTokens} in, ${response.usage.outputTokens} out`);
+    if (response.completion) {
+      for await (const chunk of response.completion) {
+      // DEBUG: Log full chunk structure for Nova
+      if (chunkCount === 0) {
+        console.log('[DEBUG] Full first chunk structure:', JSON.stringify(chunk, null, 2));
       }
+        chunkCount++;
 
-      // Add assistant message to conversation
-      const assistantMessage = response.output.message;
-      messages.push(assistantMessage);
+        if (chunk.chunk?.bytes) {
+          const text = new TextDecoder().decode(chunk.chunk.bytes);
+          completion += text;
+        }
 
-      // Process response based on stop reason
-      if (response.stopReason === 'tool_use') {
-        // Model wants to use tools
-        console.log(`Model requested ${assistantMessage.content.length} tool calls`);
-
-        // Execute each tool and collect results
-        const toolResults = [];
-
-        for (const block of assistantMessage.content) {
-          if (block.toolUse) {
-            const { toolUseId, name, input } = block.toolUse;
-            console.log(`Executing tool: ${name}`);
-
-            try {
-              const result = await executeTool(name, input, experimentId, turnNumber);
-
-              toolResults.push({
-                toolResult: {
-                  toolUseId,
-                  content: [
-                    {
-                      json: result.data
-                    }
-                  ],
-                  status: result.success ? 'success' : 'error'
-                }
-              });
-
-              console.log(`Tool ${name} completed:`, result.success ? 'success' : 'error');
-
-            } catch (error) {
-              console.error(`Tool ${name} failed:`, error);
-              toolResults.push({
-                toolResult: {
-                  toolUseId,
-                  content: [
-                    {
-                      text: `Error: ${error.message}`
-                    }
-                  ],
-                  status: 'error'
-                }
-              });
-            }
+        // Log tool invocations as they happen
+        if (chunk.trace?.trace?.orchestrationTrace?.invocationInput) {
+          const actionGroup = chunk.trace.trace.orchestrationTrace.invocationInput?.actionGroupInvocationInput?.actionGroupName;
+          const apiPath = chunk.trace.trace.orchestrationTrace.invocationInput?.actionGroupInvocationInput?.apiPath;
+          if (apiPath) {
+            console.log(`[TIMING] Tool call: ${apiPath} (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
           }
         }
 
-        // Add tool results as next user message
-        messages.push({
-          role: "user",
-          content: toolResults
-        });
-
-        console.log(`Added ${toolResults.length} tool results to conversation`);
-
-      } else if (response.stopReason === 'end_turn') {
-        // Model is done
-        conversationComplete = true;
-
-        // Extract final text response
-        for (const block of assistantMessage.content) {
-          if (block.text) {
-            finalResponse += block.text;
+        // Extract token usage from streaming response
+        // Usage stats come in the final chunk
+        if (chunk.trace?.trace?.orchestrationTrace?.modelInvocationInput) {
+          const trace = chunk.trace.trace.orchestrationTrace;
+          if (trace.modelInvocationInput?.text) {
+            console.log(`[TIMING] Model invocation input received (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
           }
         }
 
-        console.log(`Conversation complete after ${turnCount} turns`);
-
-      } else {
-        // Unexpected stop reason
-        console.warn(`Unexpected stop reason: ${response.stopReason}`);
-        conversationComplete = true;
-        finalResponse = `Stopped: ${response.stopReason}`;
+        // Token usage is in the trace
+        // Different models use different field names: inputTokens vs inputToken (singular)
+        if (chunk.trace?.trace?.orchestrationTrace?.modelInvocationOutput) {
+          const usage = chunk.trace.trace.orchestrationTrace.modelInvocationOutput?.metadata?.usage;
+          if (usage) {
+            // Support both plural (Claude) and singular (Nova/docs) field names
+            inputTokens = usage.inputTokens || usage.inputToken || 0;
+            outputTokens = usage.outputTokens || usage.outputToken || 0;
+            console.log(`[TIMING] Token usage received: ${inputTokens} in, ${outputTokens} out (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
+          }
+        }
       }
     }
 
-    if (turnCount >= maxTurns) {
-      console.warn(`Hit maximum turn limit (${maxTurns})`);
-      finalResponse = 'Maximum conversation turns reached';
-    }
+    const streamDuration = Date.now() - streamStartTime;
+    console.log(`[TIMING] Stream completed: ${chunkCount} chunks in ${streamDuration}ms`);
+    console.log('Agent response:', completion);
+    console.log(`Token usage: ${inputTokens} input, ${outputTokens} output`);
 
-    console.log(`\nTotal tokens: ${totalInputTokens} in, ${totalOutputTokens} out`);
-
-    // Calculate cost
+    // Calculate cost for this invocation
     const pricing = await getPricing();
-    const cost = calculateCost(modelName, totalInputTokens, totalOutputTokens, pricing);
-    console.log(`Total cost: $${cost.toFixed(6)}`);
+    const cost = calculateCost(event.modelName, inputTokens, outputTokens, pricing);
+
+    console.log(`Cost for this invocation: $${cost.toFixed(6)}`);
 
     return {
       experimentId,
-      agentResponse: finalResponse,
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
+      agentResponse: completion,
+      inputTokens,
+      outputTokens,
       cost
     };
 
   } catch (error) {
-    console.error('Error in Converse API orchestration:', error);
+    console.error('Error invoking agent:', error);
+
+    // Fail fast - throw error to fail the Step Functions execution
+    // No retries, no swallowing errors - if Bedrock throttles or anything fails, the experiment fails
     throw error;
   }
 };
