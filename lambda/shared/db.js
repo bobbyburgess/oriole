@@ -73,6 +73,20 @@ async function getMaze(mazeId) {
   return result.rows[0];
 }
 
+// Acquire experiment-level advisory lock
+// Prevents concurrent actions from reading stale position data
+// Lock is automatically released when transaction commits or connection closes
+async function acquireExperimentLock(experimentId) {
+  const db = await getDbClient();
+  await db.query('SELECT pg_advisory_lock($1)', [experimentId]);
+}
+
+// Release experiment-level advisory lock
+async function releaseExperimentLock(experimentId) {
+  const db = await getDbClient();
+  await db.query('SELECT pg_advisory_unlock($1)', [experimentId]);
+}
+
 // Get current agent position from last action
 // This is critical for stateless orchestration - position is the PRIMARY state we track
 //
@@ -84,6 +98,10 @@ async function getMaze(mazeId) {
 //
 // Historical bug: Originally only checked to_x/to_y, causing agent to "teleport"
 // back to start position after recall_all actions set them to NULL
+//
+// Race condition fix: This function should only be called while holding an advisory lock
+// via acquireExperimentLock(). Without the lock, concurrent actions could read the same
+// position and create discontinuities.
 async function getCurrentPosition(experimentId) {
   const db = await getDbClient();
   const result = await db.query(
@@ -166,5 +184,7 @@ module.exports = {
   getCurrentPosition,
   getNextStepNumber,
   logAction,
-  getAllSeenTiles
+  getAllSeenTiles,
+  acquireExperimentLock,
+  releaseExperimentLock
 };
