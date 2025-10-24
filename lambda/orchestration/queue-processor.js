@@ -12,7 +12,7 @@
  * EventBridge → SQS FIFO Queue (grouped by model) → This Lambda → Step Functions
  */
 
-const { SFNClient, StartExecutionCommand, ListExecutionsCommand } = require('@aws-sdk/client-sfn');
+const { SFNClient, StartExecutionCommand } = require('@aws-sdk/client-sfn');
 
 const sfnClient = new SFNClient({ region: process.env.AWS_REGION || 'us-west-2' });
 const STATE_MACHINE_ARN = process.env.STATE_MACHINE_ARN;
@@ -20,27 +20,11 @@ const STATE_MACHINE_ARN = process.env.STATE_MACHINE_ARN;
 exports.handler = async (event) => {
   console.log('Processing SQS messages:', JSON.stringify(event, null, 2));
 
-  // Check if there's already a running execution
-  // This ensures experiments run serially (one at a time)
-  const listCommand = new ListExecutionsCommand({
-    stateMachineArn: STATE_MACHINE_ARN,
-    statusFilter: 'RUNNING',
-    maxResults: 1
-  });
-
-  const runningExecutions = await sfnClient.send(listCommand);
-
-  if (runningExecutions.executions && runningExecutions.executions.length > 0) {
-    const runningExecution = runningExecutions.executions[0];
-    console.log('Experiment already running, deferring message:', {
-      runningExecutionArn: runningExecution.executionArn,
-      startDate: runningExecution.startDate
-    });
-
-    // Throw error to return message to queue
-    // SQS will retry after visibility timeout (when the running experiment finishes)
-    throw new Error('Experiment already running - message will be retried');
-  }
+  // Serialization is handled by:
+  // 1. FIFO queue with MessageGroupId = "all-experiments" (processes messages in order)
+  // 2. reservedConcurrentExecutions = 1 (only one Lambda instance)
+  // 3. batchSize = 1 (process one message at a time)
+  // No need to check for running executions - the queue ensures serialization
 
   for (const record of event.Records) {
     // Parse the EventBridge event from SQS message body
