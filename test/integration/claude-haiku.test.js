@@ -27,7 +27,8 @@ require('dotenv').config();
 
 describe('Claude 3.5 Haiku Integration', () => {
   // Increase timeout for real experiment runs
-  // With 8 RPM rate limiting: 100 turns × 7.5s = 750s (~12.5 min) + overhead
+  // With 6 RPM rate limiting: 100 turns × 10s = 1000s (~16.5 min) + overhead
+  // Note: 8 RPM caused ThrottlingException at step 35, 6 RPM provides 40% safety margin
   jest.setTimeout(2700000); // 45 minutes (conservative safety margin)
 
   const HAIKU_CONFIG = {
