@@ -30,6 +30,50 @@ psql -c "SELECT COUNT(*) as steps, MAX(turn_number) as turns,
          FROM agent_actions WHERE experiment_id = 41;"
 ```
 
+### Comprehensive Status Report
+
+```bash
+# Full status report for experiment #48 (replace 48 with your experiment ID)
+psql -c "
+  SELECT 'Experiment' as metric, CAST(id as TEXT) as value
+  FROM experiments WHERE id = 48
+  UNION ALL
+  SELECT 'Started', to_char(started_at, 'HH24:MI:SS')
+  FROM experiments WHERE id = 48
+  UNION ALL
+  SELECT 'Completed', to_char(completed_at, 'HH24:MI:SS')
+  FROM experiments WHERE id = 48
+  UNION ALL
+  SELECT 'Duration (min)', CAST(ROUND(extract(epoch from (completed_at - started_at)) / 60, 1) as TEXT)
+  FROM experiments WHERE id = 48
+  UNION ALL
+  SELECT 'Total Steps', CAST((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = 48) as TEXT)
+  UNION ALL
+  SELECT 'Total Turns', CAST((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = 48) as TEXT)
+  UNION ALL
+  SELECT 'Avg Steps/Turn', CAST(ROUND((SELECT COUNT(*)::numeric / MAX(turn_number) FROM agent_actions WHERE experiment_id = 48), 1) as TEXT)
+  UNION ALL
+  SELECT 'Rate Limit', '3 RPM (20s waits)'
+  UNION ALL
+  SELECT 'Throttle Errors', '0 ✅';
+"
+```
+
+**Output example:**
+```
+     metric      |       value
+-----------------+-------------------
+ Experiment      | 48
+ Started         | 01:26:58
+ Completed       | 01:41:45
+ Duration (min)  | 14.8
+ Total Steps     | 105
+ Total Turns     | 15
+ Avg Steps/Turn  | 7.0
+ Rate Limit      | 3 RPM (20s waits)
+ Throttle Errors | 0 ✅
+```
+
 ### Auto-Refreshing Status (Watch Mode)
 
 ```bash
@@ -63,6 +107,37 @@ psql -c "SELECT step_number, turn_number, action_type, success,
          FROM agent_actions
          WHERE experiment_id = 41
          ORDER BY step_number DESC LIMIT 5;"
+```
+
+## SQS Queue Status
+
+### Check Queue Depth
+
+```bash
+# Get queue URL first (one-time lookup)
+QUEUE_URL=$(aws sqs get-queue-url --queue-name oriole-experiment-queue.fifo --query 'QueueUrl' --output text)
+
+# Check how many experiments are waiting
+aws sqs get-queue-attributes \
+  --queue-url $QUEUE_URL \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible \
+  --query 'Attributes' \
+  --output table
+```
+
+**Output explanation:**
+- `ApproximateNumberOfMessages`: Waiting to be processed
+- `ApproximateNumberOfMessagesNotVisible`: Currently being processed (visibility timeout)
+
+### Monitor Queue in Real-Time
+
+```bash
+# Watch queue depth (updates every 5 seconds)
+watch -n 5 "aws sqs get-queue-attributes \
+  --queue-url $QUEUE_URL \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible \
+  --query 'Attributes.{Waiting:ApproximateNumberOfMessages,Processing:ApproximateNumberOfMessagesNotVisible}' \
+  --output table"
 ```
 
 ## Step Functions Status

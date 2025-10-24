@@ -193,9 +193,8 @@ When you call any action, always include experimentId=${experimentId} in your re
   } catch (error) {
     console.error('Error invoking agent:', error);
 
-    return {
-      experimentId: event.experimentId,
-      error: error.message
-    };
+    // Fail fast - throw error to fail the Step Functions execution
+    // No retries, no swallowing errors - if Bedrock throttles or anything fails, the experiment fails
+    throw error;
   }
 };

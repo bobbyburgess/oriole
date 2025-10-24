@@ -26,17 +26,30 @@ Even though `sessionId` provides conversation continuity (the agent remembers to
 
 > How do you maintain state across multiple agent invocations when the agent itself is stateless?
 
-### Our Solution: Database as Source of Truth
+### Our Solution: Database as Source of Truth + Queue Serialization
 
+**High-level flow:**
+```
+EventBridge → SQS FIFO Queue → Queue Processor → Step Functions → Bedrock Agent
+   (trigger)    (serializes)      (one at a time)   (orchestrates)      (acts)
+                                                           ↓
+                                                      Action Lambdas
+                                                           ↓
+                                                      RDS Postgres
+                                                  (source of truth)
+```
+
+**Within each Step Functions execution:**
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Step Functions Orchestration Loop                       │
+│  Step Functions Orchestration Loop (per experiment)      │
 │                                                          │
 │  1. check-progress → fetch currentX/currentY from DB     │
-│  2. invoke-agent   → pass position in prompt             │
-│  3. Agent executes → tools log actions to DB             │
-│  4. check-progress → fetch UPDATED position from DB      │
-│  5. Loop back to invoke-agent with new position         │
+│  2. wait 20s       → rate limit delay (3 RPM)            │
+│  3. invoke-agent   → pass position in prompt             │
+│  4. Agent executes → tools log actions to DB             │
+│  5. check-progress → fetch UPDATED position from DB      │
+│  6. Loop back to step 2 (wait + invoke)                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -290,6 +303,56 @@ When you call any action, always include experimentId=16 in your request.
 
 ## Error Handling & Debugging
 
+### Fail-Fast Philosophy: No Retries, Ever
+
+**Core principle:** This codebase does **NOT** retry anything. All errors fail immediately.
+
+**Why no retries?**
+
+1. **Rate limits are deterministic, not transient**
+   - ThrottlingException means you're over quota
+   - Retrying won't help - you'll just hit the limit again
+   - Better to fail fast and fix the rate limit configuration
+
+2. **Retries mask configuration problems**
+   - If something works "eventually" via retries, the root cause stays hidden
+   - You won't know if your rate limits are too aggressive
+   - Flaky behavior becomes normalized
+
+3. **Deterministic behavior is paramount**
+   - User explicitly requested: "i don't want my app depending on fast/slow aws is running"
+   - Either the configuration is correct (works every time) or it's wrong (fails every time)
+   - No "sometimes works, sometimes doesn't"
+
+**Where retries were removed:**
+
+❌ **Step Functions InvokeAgent task** - No retry configuration at all
+```javascript
+// No addRetry() calls, no retryOnServiceExceptions
+const invokeAgentStep = new tasks.LambdaInvoke(this, 'InvokeAgent', {
+  lambdaFunction: invokeAgentLambda,
+  resultPath: '$.agentResult'
+  // Fails immediately on any error
+});
+```
+
+❌ **Queue Processor Lambda** - No try/catch masking errors
+```javascript
+// If StartExecutionCommand fails, Lambda fails
+// SQS message goes back to queue after visibility timeout
+const result = await sfnClient.send(command);
+```
+
+❌ **Invoke-Agent Lambda** - Throws errors instead of returning them
+```javascript
+} catch (error) {
+  console.error('Error invoking agent:', error);
+  throw error;  // ← Fail fast, propagate to Step Functions
+}
+```
+
+**Result:** Zero tolerance for rate limiting errors. If you see a ThrottlingException, reduce the rate limit parameter immediately.
+
 ### DependencyFailedException: The Generic Error
 
 **What you see:**
@@ -400,28 +463,65 @@ ORDER BY step_number;
 
 ## Rate Limiting & Performance
 
-### Bedrock Haiku Rate Limits
+### Bedrock Rate Limits
 
-**Default quota:** ~10 requests per minute
+**Default quota:** 10 requests per minute (RPM) for Claude 3.5 Haiku
 
-This is a **soft limit** - requests beyond this get throttled with exponential backoff, not immediately rejected.
+This is a **hard limit** - requests beyond this receive `ThrottlingException` errors immediately.
 
-### Our Retry Strategy
+### The Rate Limiting Problem
 
-```javascript
-invokeAgentStep.addRetry({
-  errors: ['States.TaskFailed', 'ThrottlingException', 'TooManyRequestsException'],
-  interval: cdk.Duration.seconds(6),  // Wait 6s before retry
-  maxAttempts: 3,
-  backoffRate: 2.0  // Exponential: 6s, 12s, 24s
-});
+**Challenge:** AWS Bedrock rate limits are applied **account-wide** per model. Multiple concurrent experiments would compete for the same quota, causing unpredictable throttling.
+
+**Initial naive approach:**
+- Multiple experiments running concurrently
+- Retry logic attempting to handle throttling
+- Unpredictable behavior depending on "how fast AWS is running"
+
+**Why retries don't work:**
+- Rate limits are deterministic, not transient failures
+- Retries mask the underlying issue (too many concurrent requests)
+- Experiments become dependent on timing luck
+
+### Our Solution: Queue-Based Serialization
+
+**Architecture:**
+```
+EventBridge → SQS FIFO Queue → Queue Processor Lambda → Step Functions
+              (serializes)        (one at a time)         (rate limited)
 ```
 
-**Why these values?**
+**Key components:**
 
-- **6 second interval**: Allows ~10 req/min (60s / 6s = 10 requests)
-- **Backoff rate 2.0**: Doubles wait time on each retry
-- **Max attempts 3**: Gives up after 42 seconds total wait (6+12+24)
+1. **SQS FIFO Queue with Static MessageGroupId**
+   - All experiments use MessageGroupId = "all-experiments"
+   - FIFO + same MessageGroupId = strict serialization
+   - Only ONE experiment runs at a time globally
+   - Prevents concurrent API calls to Bedrock
+
+2. **Calculated Wait Times (No Retries)**
+   - Conservative rate: 3 RPM (30% of AWS quota)
+   - Calculated wait: `waitSeconds = 60 / rate-limit-rpm` = 20 seconds
+   - Step Functions waits between InvokeAgent calls
+   - Accounts for execution overhead and timing jitter
+
+3. **Fail-Fast Approach**
+   - **NO retries** anywhere in the system
+   - ThrottlingException immediately fails the experiment
+   - Makes rate limiting issues visible instantly
+   - No masking of configuration problems
+
+**Rate limit parameters stored in Parameter Store:**
+```bash
+# Conservative 3 RPM (uses only 30% of AWS quota)
+/oriole/models/claude-3-5-haiku/rate-limit-rpm = "3"
+```
+
+**Why 30% of quota instead of 100%?**
+- Execution overhead (each InvokeAgent call takes 2-4 seconds)
+- Network timing jitter
+- Clock synchronization variance
+- Better safe than sorry - zero throttling is the goal
 
 ### Timeout Configuration
 
@@ -444,22 +544,38 @@ const invokeAgentTimeoutMinutes = 5;
 
 ### Throughput Optimization
 
-**Current design:** Sequential execution (one agent iteration at a time)
+**Current design:** Fully serialized execution (one experiment at a time, globally)
 
 ```
-Iteration 1 → Wait for completion → Iteration 2 → Wait → ...
+Experiment A → Complete → Experiment B → Complete → ...
+  ├─ Turn 1 → Wait 20s
+  ├─ Turn 2 → Wait 20s
+  └─ Turn 3 → ...
 ```
+
+**Why fully serialized?**
+1. **Experiment-level:** One experiment at a time (SQS FIFO queue)
+2. **Turn-level:** One turn at a time within experiment (sequential Step Functions)
+3. **Action-level:** One action at a time within turn (Lambda concurrency = 1)
 
 **Why not parallel?**
 - Each iteration depends on previous position
 - Can't invoke agent with stale position
 - Database writes must complete before next read
+- Rate limits prevent concurrent agent invocations anyway
 
-**Theoretical maximum throughput:**
-- 10 req/min rate limit
-- 100 max moves
-- Minimum 10 minutes per experiment (ideal case)
-- Realistic: 15-20 minutes due to retries and processing
+**Actual throughput with 3 RPM:**
+- 3 agent invocations per minute
+- 100 max moves (turns) per experiment
+- Minimum ~33 minutes per experiment (100 / 3 = 33.3 minutes)
+- Realistic: 35-40 minutes including overhead
+
+**Trade-offs:**
+- ✅ Zero throttling errors
+- ✅ Deterministic behavior
+- ✅ Predictable experiment duration
+- ❌ Slower than theoretical maximum (if we used full 10 RPM)
+- ❌ Experiments must queue behind each other
 
 ---
 
@@ -743,20 +859,28 @@ Future you (and teammates) will thank you!
 - `lambda/shared/db.js::getCurrentPosition()` - Position tracking logic
 - `lambda/orchestration/check-progress.js` - Loop control and position passing
 
+### Rate Limiting & Queuing
+- `lib/oriole-stack.js` - SQS FIFO queue definition and rate limit configuration
+- `lambda/orchestration/queue-processor.js` - Bridges SQS to Step Functions (serialization)
+- Parameter Store: `/oriole/models/*/rate-limit-rpm` - Per-model rate limits
+
 ### Configuration
 - `lib/oriole-stack.js` - Infrastructure constants (hardcoded)
 - `lambda/shared/vision.js::getVisionRange()` - Runtime parameter lookup pattern
 - `lambda/actions/recall_all.js::getRecallInterval()` - Runtime cooldown config
 
 ### Bedrock Integration
-- `lambda/orchestration/invoke-agent.js` - Bedrock Agent invocation
+- `lambda/orchestration/invoke-agent.js` - Bedrock Agent invocation (fail-fast error handling)
 - `lambda/actions/router.js` - Action group routing
 - `lib/bedrock-agent-construct.js` - CDK agent definition
 
 ### Debugging
-- CloudWatch Logs: `/aws/lambda/ActionRouterFunction`
-- CloudWatch Logs: `/aws/lambda/InvokeAgentFunction`
+- CloudWatch Logs: `/aws/lambda/QueueProcessorFunction` - Experiment queue processing
+- CloudWatch Logs: `/aws/lambda/ActionRouterFunction` - Action handler errors
+- CloudWatch Logs: `/aws/lambda/InvokeAgentFunction` - Bedrock invocation errors
+- Step Functions: Execution history shows which step failed
 - Database: `agent_actions` table - full action history
+- SQS Console: Queue depth and message attributes
 
 ---
 
@@ -770,11 +894,21 @@ Building a stateless orchestration system for Bedrock Agents taught us:
 4. **Error messages matter** - Agents read them and adjust
 5. **Always plan for NULL** - Non-movement actions are easy to forget
 6. **Database is your debug tool** - Log everything, analyze later
+7. **Rate limiting requires serialization** - Queue experiments, don't retry throttling errors
+8. **Fail-fast > retry logic** - Deterministic behavior reveals configuration issues immediately
+9. **Use 30% of quota, not 100%** - Execution overhead and timing jitter are real
 
-Most importantly: **Bedrock Agents are powerful but require careful architectural design**. They're not "drop-in" AI - they need infrastructure that respects their stateless nature and provides the guardrails they can't provide themselves.
+Most importantly: **Bedrock Agents are powerful but require careful architectural design**. They're not "drop-in" AI - they need infrastructure that respects their stateless nature, stays within rate limits, and provides the guardrails they can't provide themselves.
+
+The biggest lesson? **Don't fight AWS rate limits with retries**. Embrace them with deterministic configuration and queue-based serialization. Your experiments will be slower but infinitely more reliable.
 
 ---
 
-**Document Version:** 1.0
+**Document Version:** 2.0
 **Last Updated:** 2025-10-23
 **Author:** Claude Code Session (Debugging & Implementation)
+**Major Changes in v2.0:**
+- Added SQS FIFO queue architecture for experiment serialization
+- Documented fail-fast approach (no retries)
+- Updated rate limiting strategy (3 RPM conservative approach)
+- Added queue processor Lambda documentation

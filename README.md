@@ -15,23 +15,36 @@ Data flows to RDS Postgres for analysis via QuickSight dashboards and an interac
 ## Architecture
 
 ```
-EventBridge → Step Functions → Bedrock Agent
-                    ↓
-          [Start | Invoke | Finalize]
-                    ↓
-              RDS Postgres ← Action Lambdas (move, recall)
-                    ↓
-         QuickSight + Viewer App
+EventBridge → SQS FIFO Queue → Queue Processor Lambda → Step Functions → Bedrock Agent
+              (serializes)       (fail-fast)              (rate limits)        ↓
+                                                                         Action Lambdas
+                                                                               ↓
+                                                                         RDS Postgres
+                                                                               ↓
+                                                                  QuickSight + Viewer App
 ```
 
 ### Components
 
-- **Bedrock Agents**: Claude 3.5 Haiku (cheapest tool-using model) navigates mazes autonomously
+- **SQS FIFO Queue**: Serializes experiment requests to prevent concurrent runs and rate limiting
+- **Queue Processor Lambda**: Starts Step Functions executions one at a time
+- **Step Functions**: Orchestrate experiment lifecycle with deterministic rate limiting
+- **Bedrock Agents**: Claude 3.5 Haiku and Amazon Nova models navigate mazes autonomously
 - **Action Groups**: Lambda functions handling `move_north`, `move_south`, `move_east`, `move_west`, `recall_all`
-- **Step Functions**: Orchestrate experiment lifecycle
 - **RDS Postgres**: Store all moves, reasoning, and metrics
 - **Viewer App**: Web UI to replay experiments step-by-step
 - **QuickSight**: Analytics dashboards for model comparison
+
+### Rate Limiting Strategy
+
+**Problem**: AWS Bedrock has per-model rate limits (e.g., 10 RPM for Claude 3.5 Haiku) that apply account-wide.
+
+**Solution**:
+1. **SQS FIFO Queue** ensures only ONE experiment runs at a time (prevents concurrent API calls)
+2. **Calculated Wait Times** between InvokeAgent calls based on model's RPM limit (stored in Parameter Store)
+3. **Fail-Fast** approach - any throttling error immediately fails the experiment (no retries masking issues)
+
+This combination guarantees we stay under rate limits while maintaining predictable experiment execution.
 
 ## Project Structure
 
@@ -42,12 +55,18 @@ oriole/
 ├── lambda/
 │   ├── actions/           # Bedrock agent action handlers
 │   ├── orchestration/     # Experiment lifecycle management
+│   │   ├── queue-processor.js    # SQS → Step Functions bridge
+│   │   ├── start-experiment.js   # Initialize DB record
+│   │   ├── invoke-agent.js       # Call Bedrock Agent (fail-fast)
+│   │   ├── check-progress.js     # Calculate rate limits, check stop conditions
+│   │   └── finalize-experiment.js # Update DB with results
 │   ├── viewer/            # Web UI Lambda
 │   └── shared/            # DB and vision utilities
 ├── db/
 │   ├── migrations/        # SQL schema
 │   └── mazes/             # Maze generators and data
 ├── scripts/               # Helper scripts
+├── test/                  # Integration tests
 └── docs/                  # Additional documentation
 ```
 
@@ -375,6 +394,38 @@ aws ssm put-parameter --name /oriole/experiments/max-duration-minutes \
   --value "30" --type String --overwrite
 ```
 
+### Rate Limiting (No Redeployment Required)
+
+**IMPORTANT**: Rate limits prevent Bedrock API throttling. Adjust these based on your account's quotas.
+
+```bash
+# Claude 3.5 Haiku - Conservative 3 RPM (20-second waits)
+# AWS quota is 10 RPM, but we use 30% to account for timing overhead
+aws ssm put-parameter --name /oriole/models/claude-3-5-haiku/rate-limit-rpm \
+  --value "3" --type String --overwrite
+
+# Nova Lite - Adjust based on your quota
+aws ssm put-parameter --name /oriole/models/nova-lite/rate-limit-rpm \
+  --value "6" --type String --overwrite
+
+# Add more models as needed
+```
+
+**How it works**:
+- The system calculates `waitSeconds = 60 / rate-limit-rpm`
+- Step Functions waits this duration between InvokeAgent calls
+- SQS FIFO queue ensures only one experiment runs at a time
+- Fail-fast approach: Any throttling error immediately fails the experiment
+
+**Finding your rate limits**:
+```bash
+# Check Bedrock quotas for your account
+aws service-quotas list-service-quotas \
+  --service-code bedrock \
+  --region us-west-2 \
+  --query "Quotas[?contains(QuotaName, 'Haiku')]"
+```
+
 ### Infrastructure Parameters (Require Redeployment)
 
 These parameters are stored in Parameter Store but changes require running `npm run deploy`:
@@ -387,19 +438,10 @@ aws ssm put-parameter --name /oriole/lambda/default-timeout-seconds \
 aws ssm put-parameter --name /oriole/lambda/invoke-agent-timeout-seconds \
   --value "300" --type String --overwrite  # 5 minutes
 
-# Action router concurrency (1 = serialize all tool calls)
+# Action router concurrency (1 = serialize all tool calls within a turn)
+# This prevents race conditions in position tracking
 aws ssm put-parameter --name /oriole/lambda/action-router-concurrency \
   --value "1" --type String --overwrite
-
-# Step Functions retry configuration
-aws ssm put-parameter --name /oriole/orchestration/retry-interval-seconds \
-  --value "6" --type String --overwrite
-
-aws ssm put-parameter --name /oriole/orchestration/retry-max-attempts \
-  --value "3" --type String --overwrite
-
-aws ssm put-parameter --name /oriole/orchestration/retry-backoff-rate \
-  --value "2.0" --type String --overwrite
 ```
 
 After changing any of these, redeploy with `npm run deploy`.
@@ -457,7 +499,18 @@ const claude3OpusAgent = new BedrockAgentConstruct(this, 'Claude3OpusAgent', {
 - Check execution history in Step Functions console
 - Verify database connectivity from Lambda
 - Ensure agent ID and alias ID are correct
-- Check for rate limiting (Bedrock Haiku has ~10 req/min limit)
+- **ThrottlingException errors**: Reduce rate limit in Parameter Store (e.g., from 6 RPM to 3 RPM)
+  ```bash
+  aws ssm put-parameter --name /oriole/models/claude-3-5-haiku/rate-limit-rpm \
+    --value "3" --overwrite
+  ```
+- Check CloudWatch logs for invoke-agent Lambda to see actual error
+
+**Experiments queuing but not starting?**
+- Check SQS queue depth: `aws sqs get-queue-attributes --queue-url <queue-url>`
+- Verify queue processor Lambda has permissions to start Step Functions
+- Check CloudWatch logs for queue processor Lambda
+- Ensure no zombie Step Functions executions are blocking the queue
 
 **EventBridge not triggering experiments?**
 - Verify `--region us-west-2` flag is set in trigger script
