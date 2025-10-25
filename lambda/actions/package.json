@@ -1,7 +1,7 @@
 {
   "name": "oriole-action-handlers",
   "version": "1.0.0",
-  "description": "Bedrock Agent action handlers for Oriole maze navigation",
+  "description": "Bedrock Agent action handlers for Oriole grid exploration",
   "main": "index.js",
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.914.0",
