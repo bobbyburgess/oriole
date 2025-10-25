@@ -102,10 +102,14 @@ When you call any action, always include experimentId=${experimentId} in your re
     // SessionId keeps conversation context (agent can reference previous tool results)
     // But position must be in prompt - agent doesn't track spatial state internally
     // SessionAttributes pass through to action handlers via router.js
+    // Use unique session ID per turn to force fresh context (no history accumulation)
+    // This ensures constant input tokens instead of linear growth
+    const sessionId = `experiment-${experimentId}-turn-${turnNumber}`;
+
     const command = new InvokeAgentCommand({
       agentId,
       agentAliasId,
-      sessionId: `experiment-${experimentId}`, // Consistent session for conversation continuity
+      sessionId,
       inputText: input,
       enableTrace: true, // Enable trace to get token usage and reasoning steps
       sessionState: {
@@ -191,6 +195,7 @@ When you call any action, always include experimentId=${experimentId} in your re
     const cost = calculateCost(event.modelName, inputTokens, outputTokens, pricing);
 
     console.log(`Cost for this invocation: $${cost.toFixed(6)}`);
+    console.log(`[SESSION] Used unique session ID: ${sessionId} (fresh context per turn)`);
 
     return {
       experimentId,
