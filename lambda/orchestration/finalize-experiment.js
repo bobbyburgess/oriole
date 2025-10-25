@@ -67,7 +67,7 @@ exports.handler = async (event) => {
       await db.query(
         `UPDATE experiments
          SET completed_at = NOW(),
-             success = $1,
+             goal_found = $1,
              failure_reason = $2
          WHERE id = $3`,
         [false, failureReason || 'Unknown error', experimentId]
@@ -77,7 +77,7 @@ exports.handler = async (event) => {
 
       return {
         experimentId,
-        success: false,
+        goal_found: false,
         failureReason
       };
     }
@@ -115,16 +115,16 @@ exports.handler = async (event) => {
     await db.query(
       `UPDATE experiments
        SET completed_at = NOW(),
-           success = $1
+           goal_found = $1
        WHERE id = $2`,
       [foundGoal, experimentId]
     );
 
-    console.log(`Finalized experiment ${experimentId}: success=${foundGoal}`);
+    console.log(`Finalized experiment ${experimentId}: goal_found=${foundGoal}`);
 
     return {
       experimentId,
-      success: foundGoal
+      goal_found: foundGoal
     };
 
   } catch (error) {

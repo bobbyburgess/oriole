@@ -104,6 +104,12 @@ async function handleMove(direction, event) {
       }
     }
 
+    // CRITICAL: Update goal_found immediately so check-progress can stop the experiment
+    if (foundGoal) {
+      await db.updateGoalFound(experimentId, true);
+      console.log(`🎯 GOAL FOUND! Experiment ${experimentId} will stop after this turn.`);
+    }
+
     // Build response
     const response = {
       success,

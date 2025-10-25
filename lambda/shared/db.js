@@ -177,6 +177,16 @@ async function getAllSeenTiles(experimentId) {
   return allTiles;
 }
 
+// Update goal_found flag when goal is detected
+// Called immediately when agent sees GOAL tile to stop experiment early
+async function updateGoalFound(experimentId, found) {
+  const db = await getDbClient();
+  await db.query(
+    'UPDATE experiments SET goal_found = $1 WHERE id = $2',
+    [found, experimentId]
+  );
+}
+
 module.exports = {
   getDbClient,
   getExperiment,
@@ -186,5 +196,6 @@ module.exports = {
   logAction,
   getAllSeenTiles,
   acquireExperimentLock,
-  releaseExperimentLock
+  releaseExperimentLock,
+  updateGoalFound
 };

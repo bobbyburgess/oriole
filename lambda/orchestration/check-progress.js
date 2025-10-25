@@ -144,7 +144,7 @@ exports.handler = async (event) => {
 
     // Get experiment current state including cumulative tokens/cost
     const expResult = await db.query(
-      `SELECT success, started_at,
+      `SELECT goal_found, started_at,
               total_input_tokens, total_output_tokens, total_cost_usd
        FROM experiments WHERE id = $1`,
       [experimentId]
@@ -155,7 +155,7 @@ exports.handler = async (event) => {
     }
 
     const experiment = expResult.rows[0];
-    const success = experiment.success;
+    const goalFound = experiment.goal_found;
     const startedAt = new Date(experiment.started_at);
 
     // Calculate cumulative totals
@@ -187,18 +187,18 @@ exports.handler = async (event) => {
     const now = new Date();
     const elapsedMinutes = (now - startedAt) / 1000 / 60;
 
-    console.log(`Experiment ${experimentId}: ${totalMoves}/${maxMoves} moves, ${elapsedMinutes.toFixed(1)}/${maxDurationMinutes} minutes, success: ${success}`);
+    console.log(`Experiment ${experimentId}: ${totalMoves}/${maxMoves} moves, ${elapsedMinutes.toFixed(1)}/${maxDurationMinutes} minutes, goal_found: ${goalFound}`);
     console.log(`Cumulative tokens: ${cumulativeInputTokens} in, ${cumulativeOutputTokens} out, $${cumulativeCost.toFixed(6)} total cost`);
 
     // Determine if we should continue
     // Stop if: goal found OR max moves reached OR max duration exceeded
     // Note: We check move count BETWEEN turns, so experiments can overshoot max_moves
     // Example: If at 96 moves and agent makes 8 tool calls in one turn, final count = 104
-    const shouldContinue = !success && totalMoves < maxMoves && elapsedMinutes < maxDurationMinutes;
+    const shouldContinue = !goalFound && totalMoves < maxMoves && elapsedMinutes < maxDurationMinutes;
 
     let stopReason = null;
     if (!shouldContinue) {
-      if (success) stopReason = 'goal_found';
+      if (goalFound) stopReason = 'goal_found';
       else if (totalMoves >= maxMoves) stopReason = 'max_moves_reached';
       else if (elapsedMinutes >= maxDurationMinutes) stopReason = 'max_duration_exceeded';
     }
