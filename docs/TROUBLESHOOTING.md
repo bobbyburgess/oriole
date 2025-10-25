@@ -72,6 +72,104 @@ aws logs tail /aws/lambda/<function> --since 5m | grep -A 2 "ERROR\|cumulativeIn
 
 ## Common Issues
 
+### Linear Inference Time Growth (Session Context Accumulation)
+
+**Problem:** Inference times grow from 1.6s/action (turn 1) to 7.3s/action (turn 35) - a 356% increase over the course of long experiments.
+
+**Root Cause:**
+- Bedrock Agent sessions accumulate conversation history in the session scratchpad (`$agent_scratchpad` variable)
+- Using `sessionId: 'experiment-${experimentId}'` creates one persistent session per experiment
+- Even with "MEMORY_SUMMARIZATION" feature disabled, session context still accumulates
+- Each turn adds: full prompt + all tool responses + agent reasoning to the context
+- Context window grows linearly → inference time grows linearly → quadratic cost growth
+
+**Evidence:**
+- Experiment 151 (35 turns): 1.6s → 7.3s per action (~0.17s degradation per turn)
+- Experiment 163 (15 turns): 2.74s → 7.85s per action (186% slowdown)
+
+**Solution:** Reduce `idleSessionTTLInSeconds` from 600s to 60s
+
+**Why This Works:**
+- With 30-second waits between turns (3 RPM rate limit for Haiku) and 60-second session TTL, sessions expire between most turns
+- Fresh session = constant context size = constant inference time
+- Changes cost scaling from quadratic (growing tokens × growing turns) to linear (constant tokens × growing turns)
+
+**Implementation:**
+```bash
+# Update agent configuration
+AWS_PROFILE=bobby aws bedrock-agent update-agent \
+  --agent-id 26U4QFQUJT \
+  --agent-name oriole-claude-35-haiku \
+  --foundation-model anthropic.claude-3-5-haiku-20241022-v1:0 \
+  --instruction "..." \
+  --agent-resource-role-arn arn:aws:iam::864899863517:role/oriole-claude-35-haiku-role \
+  --idle-session-ttl-in-seconds 60 \
+  --region us-west-2
+
+# Prepare agent to apply changes
+AWS_PROFILE=bobby aws bedrock-agent prepare-agent \
+  --agent-id 26U4QFQUJT \
+  --region us-west-2
+```
+
+**Results (Experiment 164 with 60s TTL):**
+- Turn 1: 2.59 sec/action
+- Turn 2: 2.59 sec/action (no growth!)
+- Turn 3: 2.90 sec/action
+- Turn 4: 2.98 sec/action
+- Turn 5: 2.23 sec/action
+- **Staying constant at ~2.5-3.0s instead of growing**
+- **~60% faster** at turn 5 compared to 600s TTL baseline
+
+**Key Learnings:**
+1. **Two separate memory systems in Bedrock Agents:**
+   - `MEMORY_SUMMARIZATION` feature (can be disabled) - long-term persistent summaries
+   - Session scratchpad (always active) - conversation history within session
+2. **Session TTL measures idle time** - Time between `InvokeAgent` API calls, NOT tool execution duration
+3. **AWS enforces minimum 60s TTL** - Cannot go lower
+4. **Rate limiting provides natural session breaks** - 30s waits + 60s TTL = automatic resets
+
+**Related Files:**
+- `lambda/orchestration/invoke-agent.js:105-117` - Session ID configuration
+- `lambda/orchestration/check-progress.js:137-175` - Token and cost tracking
+
+**Monitoring Query:**
+```bash
+# Compare timing between experiments with different TTLs
+PGPASSWORD='...' psql -h ... -U oriole_user -d oriole -c "
+WITH turn_times AS (
+  SELECT
+    experiment_id,
+    turn_number,
+    MIN(timestamp) as turn_start,
+    MAX(timestamp) as turn_end,
+    COUNT(*) as actions_in_turn
+  FROM agent_actions
+  WHERE experiment_id IN (163, 164)
+  GROUP BY experiment_id, turn_number
+),
+turn_durations AS (
+  SELECT
+    experiment_id,
+    turn_number,
+    actions_in_turn,
+    turn_end - turn_start as turn_duration
+  FROM turn_times
+)
+SELECT
+  CASE
+    WHEN experiment_id = 163 THEN 'Exp 163 (600s TTL)'
+    ELSE 'Exp 164 (60s TTL)'
+  END as experiment,
+  turn_number,
+  actions_in_turn,
+  ROUND(EXTRACT(EPOCH FROM turn_duration), 1) as turn_seconds,
+  ROUND(EXTRACT(EPOCH FROM turn_duration) / actions_in_turn, 2) as sec_per_action
+FROM turn_durations
+ORDER BY experiment_id, turn_number;
+"
+```
+
 ### Token Counts Look Wrong (String Concatenation Bug)
 
 **Symptom:** In Step Functions state, you see values like:

@@ -11,7 +11,7 @@
 
 const { Client } = require('pg');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const { getCurrentPosition } = require('../shared/db');
+const { getCurrentPosition, updateTurnTokens } = require('../shared/db');
 
 const ssmClient = new SSMClient();
 
@@ -174,6 +174,10 @@ exports.handler = async (event) => {
       [cumulativeInputTokens, cumulativeOutputTokens, cumulativeCost, experimentId]
     );
 
+    // Update all actions from this turn with token data
+    // This allows per-turn token analysis from agent_actions table
+    await updateTurnTokens(experimentId, turnNumber, invocationTokensIn, invocationTokensOut);
+
     // Count actual actions from agent_actions table
     // Note: experiments.total_moves is only updated at finalization
     // We count ALL actions here (moves + recalls) since they both consume agent turns
@@ -226,7 +230,7 @@ exports.handler = async (event) => {
       maxMoves,
       elapsedMinutes: Math.round(elapsedMinutes * 10) / 10,
       maxDurationMinutes,
-      success,
+      goalFound,
       shouldContinue,
       stopReason,
       // Token and cost tracking (visible in Step Functions state!)

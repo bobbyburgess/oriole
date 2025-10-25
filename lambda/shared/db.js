@@ -141,13 +141,14 @@ async function getNextStepNumber(experimentId) {
 }
 
 // Log an agent action
-async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber) {
+// inputTokens and outputTokens are optional - they represent the TURN's total tokens, stored with each action in that turn
+async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber, inputTokens = null, outputTokens = null) {
   const db = await getDbClient();
   await db.query(
     `INSERT INTO agent_actions
-     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, JSON.stringify(tilesSeen), turnNumber]
+     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number, input_tokens, output_tokens)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, JSON.stringify(tilesSeen), turnNumber, inputTokens, outputTokens]
   );
 }
 
@@ -187,6 +188,18 @@ async function updateGoalFound(experimentId, found) {
   );
 }
 
+// Update all actions in a turn with token usage data
+// Called from check-progress after invoke-agent returns with turn-level tokens
+async function updateTurnTokens(experimentId, turnNumber, inputTokens, outputTokens) {
+  const db = await getDbClient();
+  await db.query(
+    `UPDATE agent_actions
+     SET input_tokens = $1, output_tokens = $2
+     WHERE experiment_id = $3 AND turn_number = $4`,
+    [inputTokens, outputTokens, experimentId, turnNumber]
+  );
+}
+
 module.exports = {
   getDbClient,
   getExperiment,
@@ -197,5 +210,6 @@ module.exports = {
   getAllSeenTiles,
   acquireExperimentLock,
   releaseExperimentLock,
-  updateGoalFound
+  updateGoalFound,
+  updateTurnTokens
 };
