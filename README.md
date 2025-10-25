@@ -132,31 +132,70 @@ npm run synth
 npm run deploy
 ```
 
-### 5. That's It!
+### 5. Configure Agent IDs
 
-Action groups and Lambda permissions are now fully managed by CDK. The agents are ready to use immediately after `npm run deploy` completes.
+After deployment completes, run the setup script to prepare agents and store their IDs:
+
+```bash
+./scripts/setup-agent-ids.sh
+```
+
+This script will:
+- Extract agent and alias IDs from CDK outputs
+- Store them in Parameter Store for easy lookup
+- Prepare all Bedrock Agents for invocation
 
 **What CDK automatically configured:**
 - ✅ Bedrock Agents with inline action groups (move_north, move_south, move_east, move_west, recall_all)
 - ✅ Lambda resource policy permissions for Bedrock to invoke action handlers
 - ✅ IAM roles with proper Bedrock model access
 - ✅ Agent aliases pointing to the latest version
+- ✅ CDK outputs for all agent/alias IDs
 
-**No manual configuration needed!**
+**After setup script:**
+- ✅ Agent IDs stored in Parameter Store
+- ✅ All agents prepared and ready for invocation
 
 ## Running Experiments
 
-### Trigger via Script
+### Trigger by Model Name (Recommended)
+
+The simplest way to trigger experiments - no need to remember cryptic agent IDs:
+
+```bash
+# Basic usage
+./scripts/trigger-by-name.sh <model-name> <maze-id> [prompt-version]
+
+# Examples
+./scripts/trigger-by-name.sh claude-3.5-haiku 1 v2
+./scripts/trigger-by-name.sh nova-pro 3 v3-react-basic
+./scripts/trigger-by-name.sh claude-3-haiku 5 v1
+```
+
+**Available models:**
+- `claude-3.5-haiku`
+- `claude-3-haiku`
+- `nova-micro`
+- `nova-lite`
+- `nova-pro`
+- `nova-premier`
+
+The script automatically looks up agent/alias IDs from Parameter Store.
+
+### Trigger with Agent IDs (Advanced)
+
+If you need to specify exact agent/alias IDs:
 
 ```bash
 ./scripts/trigger-experiment.sh \
   <agent-id> \
   <agent-alias-id> \
-  "claude-3-5-haiku" \
-  1
+  <model-name> \
+  <maze-id> \
+  [prompt-version]
 ```
 
-### Trigger via AWS CLI
+### Trigger via AWS CLI (Advanced)
 
 ```bash
 aws events put-events --entries '[{
@@ -440,6 +479,27 @@ After changing any of these, redeploy with `npm run deploy`.
 
 ## Development
 
+### Redeploying from Scratch
+
+If you need to completely redeploy (new account, disaster recovery, etc.):
+
+```bash
+# 1. Deploy infrastructure
+npm run deploy
+
+# 2. Setup agent IDs and prepare agents
+./scripts/setup-agent-ids.sh
+
+# 3. Start running experiments
+./scripts/trigger-by-name.sh claude-3.5-haiku 1 v2
+```
+
+That's it! The setup script handles:
+- ✅ Extracting agent/alias IDs from CDK outputs
+- ✅ Storing them in Parameter Store
+- ✅ Preparing all Bedrock Agents
+- ✅ Verifying everything is ready
+
 ### Adding New Models
 
 1. Create new agent in `lib/oriole-stack.js`:
@@ -453,7 +513,10 @@ const claude3OpusAgent = new BedrockAgentConstruct(this, 'Claude3OpusAgent', {
 });
 ```
 
-2. Deploy and configure action groups
+2. Add CDK outputs for the agent ID and alias ID
+3. Update `scripts/setup-agent-ids.sh` with the new model mapping
+4. Update `scripts/trigger-by-name.sh` available models list
+5. Deploy and run setup script
 
 ### Adding New Mazes
 
