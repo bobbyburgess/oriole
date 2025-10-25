@@ -82,7 +82,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 200,
         headers: {
-          'Content-Type': 'text/html'
+          'Content-Type': 'text/html; charset=utf-8'
         },
         body: getViewerHTML(colors)
       };
@@ -184,6 +184,7 @@ function getViewerHTML(colors) {
   return `<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Oriole</title>
   <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.6/dist/amazon-cognito-identity.min.js"></script>
   <style>
@@ -210,7 +211,7 @@ function getViewerHTML(colors) {
     }
     #login-form h3 {
       margin-bottom: 20px;
-      color: #4CAF50;
+      color: #e0e0e0;
     }
     #login-form input {
       width: 100%;
@@ -227,24 +228,6 @@ function getViewerHTML(colors) {
       height: 100vh;
       width: 100vw;
     }
-    #user-bar {
-      position: fixed;
-      top: 0;
-      right: 0;
-      padding: 10px 20px;
-      background: #2a2a2a;
-      border-bottom-left-radius: 8px;
-      font-size: 16px;
-      z-index: 100;
-    }
-    #user-bar a {
-      color: #4CAF50;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    #user-bar a:hover {
-      text-decoration: underline;
-    }
     #canvas-container {
       position: fixed;
       top: 0;
@@ -255,14 +238,44 @@ function getViewerHTML(colors) {
       display: block;
       background: ${colors.background};
     }
+    #info {
+      position: fixed;
+      top: 0;
+      left: 730px;
+      width: 720px;
+      height: 720px;
+      padding: 20px;
+      background: rgba(42, 42, 42, 0.95);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-y: auto;
+    }
     #controls {
       position: fixed;
-      bottom: 20px;
-      left: 20px;
+      top: 20px;
+      right: 20px;
       padding: 20px;
       background: rgba(42, 42, 42, 0.95);
       border-radius: 8px;
       min-width: 350px;
+      z-index: 100;
+    }
+    #user-info {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #444;
+      font-size: 14px;
+      color: #999;
+    }
+    #user-info a {
+      color: #999;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #user-info a:hover {
+      color: #ccc;
+      text-decoration: underline;
     }
     #experiment-selector {
       margin-bottom: 15px;
@@ -285,8 +298,8 @@ function getViewerHTML(colors) {
     }
     button {
       padding: 10px 20px;
-      background: #4CAF50;
-      color: white;
+      background: #555;
+      color: #e0e0e0;
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -294,10 +307,10 @@ function getViewerHTML(colors) {
       font-weight: 500;
     }
     button:hover {
-      background: #45a049;
+      background: #666;
     }
     button:disabled {
-      background: #555;
+      background: #333;
       cursor: not-allowed;
     }
     #speed-control {
@@ -318,45 +331,20 @@ function getViewerHTML(colors) {
       border-radius: 4px;
       font-size: 14px;
     }
-    #info {
-      position: fixed;
-      bottom: 20px;
-      left: 410px;
-      right: 20px;
-      padding: 20px;
-      background: rgba(42, 42, 42, 0.95);
-      border-radius: 8px;
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 16px;
-      line-height: 1.8;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-    }
     .stat {
-      margin: 8px 0;
+      margin: 4px 0;
     }
     .stat strong {
-      color: #4CAF50;
-      min-width: 180px;
+      color: #999;
+      min-width: 160px;
       display: inline-block;
-    }
-    .section-title {
-      color: #FFD700;
-      font-size: 18px;
-      margin-top: 20px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid #444;
-      padding-bottom: 5px;
-    }
-    .section-title:first-child {
-      margin-top: 0;
     }
     .error {
       color: #ff6b6b;
       margin: 10px 0;
     }
     .success {
-      color: #4CAF50;
+      color: #e0e0e0;
     }
     .failure {
       color: #ff6b6b;
@@ -373,10 +361,6 @@ function getViewerHTML(colors) {
   </div>
 
   <div id="viewer-content">
-    <div id="user-bar">
-      <span id="user-info"></span>
-    </div>
-
     <div id="canvas-container">
       <canvas id="mazeCanvas"></canvas>
     </div>
@@ -401,6 +385,8 @@ function getViewerHTML(colors) {
       <div style="font-size: 14px; color: #999; margin-top: 10px;">
         <span id="stepInfo">No experiment loaded</span>
       </div>
+
+      <div id="user-info"></div>
     </div>
 
     <div id="info">
@@ -514,9 +500,8 @@ function getViewerHTML(colors) {
 
           const successIcon = exp.goal_found ? '✓' : '✗';
           const successClass = exp.goal_found ? 'success' : 'failure';
-          const successText = exp.goal_found ? 'Success' : 'Failure';
 
-          option.textContent = \`\${exp.id} - \${exp.model_name} - \${successIcon} \${successText}\`;
+          option.textContent = \`\${exp.id} - \${exp.model_name} \${successIcon}\`;
           option.className = successClass;
           dropdown.appendChild(option);
         });
@@ -647,7 +632,7 @@ function getViewerHTML(colors) {
       const mazeInfo = experimentData.maze;
       const action = currentStep < experimentData.actions.length ? experimentData.actions[currentStep] : null;
 
-      let infoHTML = '<div class="section-title">Experiment Info</div>';
+      let infoHTML = '';
       infoHTML += \`<div class="stat"><strong>Experiment ID:</strong> \${exp.id}</div>\`;
       infoHTML += \`<div class="stat"><strong>Agent ID:</strong> \${exp.agent_id || 'N/A'}</div>\`;
       infoHTML += \`<div class="stat"><strong>Model:</strong> \${exp.model_name || 'N/A'}</div>\`;
@@ -664,23 +649,19 @@ function getViewerHTML(colors) {
 
       infoHTML += \`<div class="stat"><strong>Total Moves:</strong> \${experimentData.actions.length}</div>\`;
 
-      if (exp.total_input_tokens || exp.total_output_tokens) {
-        infoHTML += '<div class="section-title">Token Usage</div>';
-        if (exp.total_input_tokens) {
-          infoHTML += \`<div class="stat"><strong>Input Tokens:</strong> \${exp.total_input_tokens.toLocaleString()}</div>\`;
-        }
-        if (exp.total_output_tokens) {
-          infoHTML += \`<div class="stat"><strong>Output Tokens:</strong> \${exp.total_output_tokens.toLocaleString()}</div>\`;
-        }
-        const totalTokens = (exp.total_input_tokens || 0) + (exp.total_output_tokens || 0);
-        if (totalTokens > 0) {
-          infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${totalTokens.toLocaleString()}</div>\`;
-        }
+      if (exp.total_input_tokens) {
+        infoHTML += \`<div class="stat"><strong>Input Tokens:</strong> \${exp.total_input_tokens.toLocaleString()}</div>\`;
+      }
+      if (exp.total_output_tokens) {
+        infoHTML += \`<div class="stat"><strong>Output Tokens:</strong> \${exp.total_output_tokens.toLocaleString()}</div>\`;
+      }
+      const totalTokens = (exp.total_input_tokens || 0) + (exp.total_output_tokens || 0);
+      if (totalTokens > 0) {
+        infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${totalTokens.toLocaleString()}</div>\`;
       }
 
       if (exp.total_cost_usd) {
-        infoHTML += '<div class="section-title">Cost</div>';
-        infoHTML += \`<div class="stat"><strong>Total Cost:</strong> $\${exp.total_cost_usd.toFixed(6)}</div>\`;
+        infoHTML += \`<div class="stat"><strong>Total Cost:</strong> $\${Number(exp.total_cost_usd).toFixed(6)}</div>\`;
       }
 
       if (exp.started_at) {
@@ -690,7 +671,6 @@ function getViewerHTML(colors) {
         infoHTML += \`<div class="stat"><strong>Completed:</strong> \${new Date(exp.completed_at).toLocaleString()}</div>\`;
       }
 
-      infoHTML += '<div class="section-title">Grid Info</div>';
       infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${mazeInfo.name}</div>\`;
       infoHTML += \`<div class="stat"><strong>Dimensions:</strong> \${mazeInfo.width} × \${mazeInfo.height}</div>\`;
 
@@ -705,7 +685,6 @@ function getViewerHTML(colors) {
       infoHTML += \`<div class="stat"><strong>Start Position:</strong> (\${exp.start_x}, \${exp.start_y})</div>\`;
 
       if (action) {
-        infoHTML += '<div class="section-title">Current Step</div>';
         infoHTML += \`<div class="stat"><strong>Step Number:</strong> \${action.step_number}</div>\`;
         infoHTML += \`<div class="stat"><strong>Action:</strong> \${action.action_type}</div>\`;
         infoHTML += \`<div class="stat"><strong>From:</strong> (\${action.from_x}, \${action.from_y})</div>\`;
@@ -722,7 +701,7 @@ function getViewerHTML(colors) {
         }
 
         if (action.cost_usd) {
-          infoHTML += \`<div class="stat"><strong>Step Cost:</strong> $\${action.cost_usd.toFixed(6)}</div>\`;
+          infoHTML += \`<div class="stat"><strong>Step Cost:</strong> $\${Number(action.cost_usd).toFixed(6)}</div>\`;
         }
 
         if (action.timestamp) {
