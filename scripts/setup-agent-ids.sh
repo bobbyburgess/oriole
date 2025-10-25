@@ -47,18 +47,30 @@ echo ""
 for MODEL_CONFIG in "${MODELS[@]}"; do
   IFS=':' read -r MODEL_NAME AGENT_KEY ALIAS_KEY <<< "$MODEL_CONFIG"
 
-  # Extract IDs from outputs
+  # Extract agent ID from CDK outputs
   AGENT_ID=$(echo "$OUTPUTS" | jq -r ".[] | select(.OutputKey==\"$AGENT_KEY\") | .OutputValue")
-  ALIAS_ID=$(echo "$OUTPUTS" | jq -r ".[] | select(.OutputKey==\"$ALIAS_KEY\") | .OutputValue")
 
-  if [ -z "$AGENT_ID" ] || [ -z "$ALIAS_ID" ]; then
-    echo "❌ Failed to find outputs for $MODEL_NAME (agent: $AGENT_KEY, alias: $ALIAS_KEY)"
+  if [ -z "$AGENT_ID" ]; then
+    echo "❌ Failed to find agent ID for $MODEL_NAME (key: $AGENT_KEY)"
+    continue
+  fi
+
+  # Discover alias ID from Bedrock API (CDK outputs may have drift)
+  # Look for the "prod" alias for this agent
+  ALIAS_ID=$(AWS_PROFILE=$PROFILE aws bedrock-agent list-agent-aliases \
+    --agent-id "$AGENT_ID" \
+    --region $REGION \
+    --no-cli-pager 2>/dev/null | \
+    jq -r '.agentAliasSummaries[] | select(.agentAliasName == "prod") | .agentAliasId')
+
+  if [ -z "$ALIAS_ID" ]; then
+    echo "❌ Failed to find 'prod' alias for $MODEL_NAME (agent: $AGENT_ID)"
     continue
   fi
 
   echo "  $MODEL_NAME:"
   echo "    Agent ID: $AGENT_ID"
-  echo "    Alias ID: $ALIAS_ID"
+  echo "    Alias ID: $ALIAS_ID (discovered from Bedrock)"
 
   # Store in Parameter Store
   AWS_PROFILE=$PROFILE aws ssm put-parameter \
