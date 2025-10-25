@@ -58,10 +58,31 @@ exports.handler = async (event) => {
   console.log('Finalize experiment event:', JSON.stringify(event, null, 2));
 
   try {
-    const { experimentId } = event;
+    const { experimentId, success: explicitSuccess, failureReason } = event;
 
     const db = await getDbClient();
 
+    // If called from error handler, use explicit success=false and failure reason
+    if (explicitSuccess === false) {
+      await db.query(
+        `UPDATE experiments
+         SET completed_at = NOW(),
+             success = $1,
+             failure_reason = $2
+         WHERE id = $3`,
+        [false, failureReason || 'Unknown error', experimentId]
+      );
+
+      console.log(`Finalized experiment ${experimentId}: failed with reason: ${failureReason}`);
+
+      return {
+        experimentId,
+        success: false,
+        failureReason
+      };
+    }
+
+    // Normal completion path - check if goal was found
     // Note: Token counts are tracked in experiments table via check-progress.js
     // No need to aggregate from agent_actions (we use total_input_tokens + total_output_tokens)
 

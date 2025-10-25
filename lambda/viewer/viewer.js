@@ -22,6 +22,34 @@ async function getDbPassword() {
   return cachedDbPassword;
 }
 
+async function getColorConfig() {
+  const colorParams = [
+    { key: 'background', path: '/oriole/viewer/color/background', default: '#0a0a0a' },
+    { key: 'wall', path: '/oriole/viewer/color/wall', default: '#555' },
+    { key: 'goal', path: '/oriole/viewer/color/goal', default: '#FFD700' },
+    { key: 'agent', path: '/oriole/viewer/color/agent', default: '#4CAF50' },
+    { key: 'seen', path: '/oriole/viewer/color/seen', default: 'rgba(100, 150, 255, 0.2)' },
+  ];
+
+  const colors = {};
+
+  for (const param of colorParams) {
+    try {
+      const command = new GetParameterCommand({
+        Name: param.path,
+        WithDecryption: false
+      });
+      const response = await ssmClient.send(command);
+      colors[param.key] = response.Parameter.Value;
+    } catch (error) {
+      // Use default if parameter doesn't exist
+      colors[param.key] = param.default;
+    }
+  }
+
+  return colors;
+}
+
 async function getDbClient() {
   if (client) {
     return client;
@@ -50,12 +78,33 @@ exports.handler = async (event) => {
 
     // Serve the viewer UI
     if (path === '/viewer') {
+      const colors = await getColorConfig();
       return {
         statusCode: 200,
         headers: {
           'Content-Type': 'text/html'
         },
-        body: getViewerHTML()
+        body: getViewerHTML(colors)
+      };
+    }
+
+    // Get list of all experiments
+    if (path === '/experiments' && !path.includes('/experiments/')) {
+      const db = await getDbClient();
+
+      const result = await db.query(
+        `SELECT id, model_name, success, created_at, total_moves
+         FROM experiments
+         ORDER BY id DESC
+         LIMIT 100`
+      );
+
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(result.rows)
       };
     }
 
@@ -129,57 +178,118 @@ exports.handler = async (event) => {
   }
 };
 
-function getViewerHTML() {
+function getViewerHTML(colors) {
   return `<!DOCTYPE html>
 <html>
 <head>
-  <title>Oriole Maze Viewer</title>
+  <title>Oriole</title>
   <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.6/dist/amazon-cognito-identity.min.js"></script>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
     body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: #1a1a1a;
       color: #e0e0e0;
-    }
-    h1 {
-      color: #4CAF50;
+      overflow: hidden;
     }
     #login-form {
-      margin: 20px 0;
-      padding: 20px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 30px;
       background: #2a2a2a;
       border-radius: 8px;
-      max-width: 400px;
+      min-width: 400px;
+    }
+    #login-form h3 {
+      margin-bottom: 20px;
+      color: #4CAF50;
     }
     #login-form input {
       width: 100%;
       margin: 10px 0;
+      padding: 12px;
+      background: #333;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    #viewer-content {
+      display: none;
+      height: 100vh;
+      width: 100vw;
+    }
+    #user-bar {
+      position: fixed;
+      top: 0;
+      right: 0;
+      padding: 10px 20px;
+      background: #2a2a2a;
+      border-bottom-left-radius: 8px;
+      font-size: 16px;
+      z-index: 100;
+    }
+    #user-bar a {
+      color: #4CAF50;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #user-bar a:hover {
+      text-decoration: underline;
+    }
+    #canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      border: none;
+    }
+    canvas {
+      display: block;
+      background: ${colors.background};
+    }
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      padding: 20px;
+      background: rgba(42, 42, 42, 0.95);
+      border-radius: 8px;
+      min-width: 350px;
+    }
+    #experiment-selector {
+      margin-bottom: 15px;
+    }
+    #experiment-selector select {
+      width: 100%;
       padding: 10px;
       background: #333;
       border: 1px solid #555;
       color: #e0e0e0;
       border-radius: 4px;
-      box-sizing: border-box;
+      font-size: 14px;
+      cursor: pointer;
     }
-    #viewer-content {
-      display: none;
-    }
-    #controls {
-      margin: 20px 0;
-      padding: 15px;
-      background: #2a2a2a;
-      border-radius: 8px;
+    #playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
     }
     button {
       padding: 10px 20px;
-      margin: 5px;
       background: #4CAF50;
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
       font-size: 14px;
+      font-weight: 500;
     }
     button:hover {
       background: #45a049;
@@ -188,44 +298,70 @@ function getViewerHTML() {
       background: #555;
       cursor: not-allowed;
     }
-    #canvas-container {
-      margin: 20px 0;
-      border: 2px solid #444;
-      border-radius: 8px;
-      overflow: hidden;
+    #speed-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    canvas {
-      display: block;
-      background: #0a0a0a;
+    #speed-control label {
+      font-size: 14px;
+      white-space: nowrap;
     }
-    #info {
-      margin: 20px 0;
-      padding: 15px;
-      background: #2a2a2a;
-      border-radius: 8px;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-    }
-    .stat {
-      margin: 5px 0;
-    }
-    input {
+    #speed-control input {
+      width: 70px;
       padding: 8px;
-      margin: 5px;
       background: #333;
       border: 1px solid #555;
       color: #e0e0e0;
       border-radius: 4px;
+      font-size: 14px;
+    }
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 410px;
+      right: 20px;
+      padding: 20px;
+      background: rgba(42, 42, 42, 0.95);
+      border-radius: 8px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 16px;
+      line-height: 1.8;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    .stat {
+      margin: 8px 0;
+    }
+    .stat strong {
+      color: #4CAF50;
+      min-width: 180px;
+      display: inline-block;
+    }
+    .section-title {
+      color: #FFD700;
+      font-size: 18px;
+      margin-top: 20px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 5px;
+    }
+    .section-title:first-child {
+      margin-top: 0;
     }
     .error {
       color: #ff6b6b;
       margin: 10px 0;
     }
+    .success {
+      color: #4CAF50;
+    }
+    .failure {
+      color: #ff6b6b;
+    }
   </style>
 </head>
 <body>
-  <h1>🐦 Oriole Maze Viewer</h1>
-
   <div id="login-form">
     <h3>Sign In</h3>
     <input type="text" id="username" placeholder="Username" />
@@ -235,32 +371,45 @@ function getViewerHTML() {
   </div>
 
   <div id="viewer-content">
-    <div style="margin-bottom: 10px;">
+    <div id="user-bar">
       <span id="user-info"></span>
-      <button onclick="logout()">Logout</button>
-    </div>
-
-    <div id="controls">
-      <input type="number" id="experimentId" placeholder="Experiment ID" value="1" />
-      <button onclick="loadExperiment()">Load Experiment</button>
-      <br>
-      <button onclick="stepBackward()" id="prevBtn">◀ Previous</button>
-      <button onclick="stepForward()" id="nextBtn">Next ▶</button>
-      <button onclick="toggleAutoplay()" id="playBtn">▶ Play</button>
-      <span id="stepInfo"></span>
     </div>
 
     <div id="canvas-container">
-      <canvas id="mazeCanvas" width="600" height="600"></canvas>
+      <canvas id="mazeCanvas"></canvas>
+    </div>
+
+    <div id="controls">
+      <div id="experiment-selector">
+        <select id="experimentDropdown" onchange="loadExperiment()">
+          <option value="">Loading experiments...</option>
+        </select>
+      </div>
+
+      <div id="playback-controls">
+        <button onclick="restart()" id="restartBtn">⏮ Restart</button>
+        <button onclick="toggleAutoplay()" id="playBtn">▶ Play</button>
+        <div id="speed-control">
+          <label for="speedDial">Speed:</label>
+          <input type="number" id="speedDial" min="100" max="5000" step="100" value="500" />
+          <span>ms</span>
+        </div>
+      </div>
+
+      <div style="font-size: 14px; color: #999; margin-top: 10px;">
+        <span id="stepInfo">No experiment loaded</span>
+      </div>
     </div>
 
     <div id="info">
-      <div class="stat" id="experimentInfo">No experiment loaded</div>
-      <div class="stat" id="currentAction"></div>
+      <div id="experimentInfo">Select an experiment from the dropdown to begin</div>
     </div>
   </div>
 
   <script>
+    // Color configuration from Parameter Store
+    const COLORS = ${JSON.stringify(colors)};
+
     // Cognito configuration
     const poolData = {
       UserPoolId: 'us-west-2_YyOSMp5U9',
@@ -324,17 +473,57 @@ function getViewerHTML() {
       document.getElementById('viewer-content').style.display = 'none';
     }
 
-    function showViewer(username) {
+    async function showViewer(username) {
       document.getElementById('login-form').style.display = 'none';
       document.getElementById('viewer-content').style.display = 'block';
-      document.getElementById('user-info').textContent = \`Logged in as: \${username}\`;
+      document.getElementById('user-info').innerHTML = \`\${username} (<a onclick="logout()">logout</a>)\`;
+
+      // Load experiments list
+      await loadExperimentsList();
+    }
+
+    async function loadExperimentsList() {
+      try {
+        const response = await fetch('/experiments', {
+          headers: {
+            'Authorization': jwtToken
+          }
+        });
+
+        if (!response.ok) {
+          console.error('Failed to load experiments list');
+          return;
+        }
+
+        const experiments = await response.json();
+        const dropdown = document.getElementById('experimentDropdown');
+        dropdown.innerHTML = '<option value="">Select an experiment...</option>';
+
+        experiments.forEach(exp => {
+          const option = document.createElement('option');
+          option.value = exp.id;
+          const successIcon = exp.success ? '✓' : '✗';
+          const successClass = exp.success ? 'success' : 'failure';
+          option.textContent = \`\${exp.id} - \${exp.model_name} - \${successIcon} \${exp.success ? 'Success' : 'Failure'}\`;
+          option.className = successClass;
+          dropdown.appendChild(option);
+        });
+
+        console.log('Loaded', experiments.length, 'experiments');
+      } catch (error) {
+        console.error('Error loading experiments list:', error);
+      }
     }
 
     async function loadExperiment() {
       try {
-        const experimentId = document.getElementById('experimentId').value;
+        const experimentId = document.getElementById('experimentDropdown').value;
+
+        if (!experimentId) {
+          return;
+        }
+
         console.log('Loading experiment:', experimentId);
-        console.log('Using JWT token:', jwtToken ? 'present' : 'missing');
 
         const response = await fetch(\`/experiments/\${experimentId}\`, {
           headers: {
@@ -342,23 +531,40 @@ function getViewerHTML() {
           }
         });
 
-        console.log('Response status:', response.status);
-
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API error:', response.status, errorText);
-          document.getElementById('experimentInfo').innerHTML = \`<span style="color: #ff6b6b;">Error loading experiment: \${response.status} - \${errorText}</span>\`;
+          document.getElementById('experimentInfo').innerHTML = \`<span class="error">Error loading experiment: \${response.status} - \${errorText}</span>\`;
           return;
         }
 
         experimentData = await response.json();
         console.log('Experiment data loaded:', experimentData);
         currentStep = 0;
+
+        // Stop autoplay if running
+        if (autoplayInterval) {
+          toggleAutoplay();
+        }
+
         render();
       } catch (error) {
         console.error('Error loading experiment:', error);
-        document.getElementById('experimentInfo').innerHTML = \`<span style="color: #ff6b6b;">Error: \${error.message}</span>\`;
+        document.getElementById('experimentInfo').innerHTML = \`<span class="error">Error: \${error.message}</span>\`;
       }
+    }
+
+    function restart() {
+      if (!experimentData) return;
+
+      currentStep = 0;
+
+      // Stop autoplay if running
+      if (autoplayInterval) {
+        toggleAutoplay();
+      }
+
+      render();
     }
 
     function render() {
@@ -374,7 +580,7 @@ function getViewerHTML() {
       canvas.height = maze.height * CELL_SIZE;
 
       // Clear canvas
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw grid
@@ -384,13 +590,13 @@ function getViewerHTML() {
 
           if (cell === 1) {
             // Wall
-            ctx.fillStyle = '#555';
+            ctx.fillStyle = COLORS.wall;
           } else if (cell === 2) {
             // Goal
-            ctx.fillStyle = '#FFD700';
+            ctx.fillStyle = COLORS.goal;
           } else {
-            // Empty - check if seen
-            ctx.fillStyle = '#0a0a0a';
+            // Empty
+            ctx.fillStyle = COLORS.background;
           }
 
           ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
@@ -401,7 +607,7 @@ function getViewerHTML() {
       if (currentStep < experimentData.actions.length) {
         const action = experimentData.actions[currentStep];
         if (action.tiles_seen) {
-          ctx.fillStyle = 'rgba(100, 150, 255, 0.2)';
+          ctx.fillStyle = COLORS.seen;
           for (const coord in action.tiles_seen) {
             const [x, y] = coord.split(',').map(Number);
             ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
@@ -412,10 +618,10 @@ function getViewerHTML() {
       // Draw agent position
       if (currentStep < experimentData.actions.length) {
         const action = experimentData.actions[currentStep];
-        const x = action.to_x || action.from_x;
-        const y = action.to_y || action.from_y;
+        const x = action.to_x !== null ? action.to_x : action.from_x;
+        const y = action.to_y !== null ? action.to_y : action.from_y;
 
-        ctx.fillStyle = '#4CAF50';
+        ctx.fillStyle = COLORS.agent;
         ctx.fillRect(
           x * CELL_SIZE + 1,
           y * CELL_SIZE + 1,
@@ -424,36 +630,81 @@ function getViewerHTML() {
         );
       }
 
-      // Update info
-      document.getElementById('experimentInfo').innerHTML = \`
-        <strong>Model:</strong> \${experimentData.experiment.model_name}<br>
-        <strong>Maze:</strong> \${experimentData.maze.name}<br>
-        <strong>Total Moves:</strong> \${experimentData.actions.length}<br>
-        <strong>Success:</strong> \${experimentData.experiment.success ? 'Yes' : 'No'}
-      \`;
+      // Update info display with comprehensive data
+      const exp = experimentData.experiment;
+      const grid = experimentData.maze;
+      const action = currentStep < experimentData.actions.length ? experimentData.actions[currentStep] : null;
 
-      if (currentStep < experimentData.actions.length) {
-        const action = experimentData.actions[currentStep];
-        document.getElementById('currentAction').innerHTML = \`
-          <strong>Step \${action.step_number}:</strong> \${action.action_type}<br>
-          <strong>Position:</strong> (\${action.to_x || action.from_x}, \${action.to_y || action.from_y})<br>
-          <strong>Reasoning:</strong> \${action.reasoning || 'N/A'}
-        \`;
+      let infoHTML = '<div class="section-title">Experiment Info</div>';
+      infoHTML += \`<div class="stat"><strong>Experiment ID:</strong> \${exp.id}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Agent ID:</strong> \${exp.agent_id || 'N/A'}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Model:</strong> \${exp.model_name || 'N/A'}</div>\`;
+
+      if (exp.prompt_version) {
+        infoHTML += \`<div class="stat"><strong>Prompt Version:</strong> \${exp.prompt_version}</div>\`;
       }
 
-      document.getElementById('stepInfo').textContent = \`Step \${currentStep + 1} / \${experimentData.actions.length}\`;
+      infoHTML += \`<div class="stat"><strong>Status:</strong> \${exp.status || 'N/A'}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Success:</strong> <span class="\${exp.success ? 'success' : 'failure'}">\${exp.success ? 'Yes ✓' : 'No ✗'}</span></div>\`;
+      infoHTML += \`<div class="stat"><strong>Total Moves:</strong> \${exp.total_moves || experimentData.actions.length}</div>\`;
+
+      if (exp.total_tokens) {
+        infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${exp.total_tokens.toLocaleString()}</div>\`;
+      }
+
+      if (exp.started_at) {
+        infoHTML += \`<div class="stat"><strong>Started:</strong> \${new Date(exp.started_at).toLocaleString()}</div>\`;
+      }
+      if (exp.completed_at) {
+        infoHTML += \`<div class="stat"><strong>Completed:</strong> \${new Date(exp.completed_at).toLocaleString()}</div>\`;
+      }
+
+      infoHTML += '<div class="section-title">Grid Info</div>';
+      infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${grid.name}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Dimensions:</strong> \${grid.width} × \${grid.height}</div>\`;
+
+      if (grid.see_through_walls !== undefined) {
+        infoHTML += \`<div class="stat"><strong>See Through Walls:</strong> \${grid.see_through_walls ? 'Yes' : 'No'}</div>\`;
+      }
+
+      if (exp.goal_description) {
+        infoHTML += \`<div class="stat"><strong>Goal:</strong> \${exp.goal_description}</div>\`;
+      }
+
+      infoHTML += \`<div class="stat"><strong>Start Position:</strong> (\${exp.start_x}, \${exp.start_y})</div>\`;
+
+      if (action) {
+        infoHTML += '<div class="section-title">Current Step</div>';
+        infoHTML += \`<div class="stat"><strong>Step Number:</strong> \${action.step_number}</div>\`;
+        infoHTML += \`<div class="stat"><strong>Action:</strong> \${action.action_type}</div>\`;
+        infoHTML += \`<div class="stat"><strong>From:</strong> (\${action.from_x}, \${action.from_y})</div>\`;
+
+        if (action.to_x !== null && action.to_y !== null) {
+          infoHTML += \`<div class="stat"><strong>To:</strong> (\${action.to_x}, \${action.to_y})</div>\`;
+        }
+
+        infoHTML += \`<div class="stat"><strong>Action Success:</strong> \${action.success ? 'Yes' : 'No (hit wall)'}</div>\`;
+
+        if (action.tokens_used) {
+          infoHTML += \`<div class="stat"><strong>Tokens Used:</strong> \${action.tokens_used.toLocaleString()}</div>\`;
+        }
+
+        if (action.timestamp) {
+          infoHTML += \`<div class="stat"><strong>Timestamp:</strong> \${new Date(action.timestamp).toLocaleString()}</div>\`;
+        }
+
+        if (action.reasoning) {
+          infoHTML += \`<div class="stat"><strong>Reasoning:</strong> \${action.reasoning}</div>\`;
+        }
+      }
+
+      document.getElementById('experimentInfo').innerHTML = infoHTML;
+      document.getElementById('stepInfo').textContent = experimentData ? \`Step \${currentStep + 1} / \${experimentData.actions.length}\` : 'No experiment loaded';
     }
 
     function stepForward() {
       if (experimentData && currentStep < experimentData.actions.length - 1) {
         currentStep++;
-        render();
-      }
-    }
-
-    function stepBackward() {
-      if (experimentData && currentStep > 0) {
-        currentStep--;
         render();
       }
     }
@@ -464,12 +715,13 @@ function getViewerHTML() {
         autoplayInterval = null;
         document.getElementById('playBtn').textContent = '▶ Play';
       } else {
+        const speed = parseInt(document.getElementById('speedDial').value) || 500;
         autoplayInterval = setInterval(() => {
           stepForward();
           if (currentStep === experimentData.actions.length - 1) {
             toggleAutoplay();
           }
-        }, 500);
+        }, speed);
         document.getElementById('playBtn').textContent = '⏸ Pause';
       }
     }
