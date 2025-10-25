@@ -5,7 +5,7 @@
 -- 1. EXPERIMENT SUMMARY VIEW
 -- High-level metrics for each experiment with calculated efficiency scores
 -- ============================================================================
-CREATE OR REPLACE VIEW experiment_summary AS
+CREATE OR REPLACE VIEW v_experiment_summary AS
 SELECT
   e.id,
   e.model_name,
@@ -58,7 +58,7 @@ ORDER BY e.id DESC;
 -- 2. MODEL PERFORMANCE COMPARISON VIEW
 -- Aggregate statistics by model for comparison
 -- ============================================================================
-CREATE OR REPLACE VIEW model_performance AS
+CREATE OR REPLACE VIEW v_model_performance AS
 SELECT
   model_name,
 
@@ -88,7 +88,7 @@ SELECT
   ROUND(AVG(move_success_rate_pct), 1) AS avg_move_success_rate_pct,
   ROUND(AVG(recall_count), 1) AS avg_recalls_per_experiment
 
-FROM experiment_summary
+FROM v_experiment_summary
 GROUP BY model_name
 ORDER BY model_name;
 
@@ -97,7 +97,7 @@ ORDER BY model_name;
 -- 3. PROMPT VARIANT ANALYSIS VIEW
 -- Compare different prompt versions
 -- ============================================================================
-CREATE OR REPLACE VIEW prompt_variant_analysis AS
+CREATE OR REPLACE VIEW v_prompt_variant_analysis AS
 SELECT
   prompt_version,
   model_name,
@@ -124,7 +124,7 @@ SELECT
   -- Cost totals
   ROUND(SUM(total_cost_usd), 4) AS total_cost
 
-FROM experiment_summary
+FROM v_experiment_summary
 GROUP BY prompt_version, model_name
 ORDER BY prompt_version, model_name;
 
@@ -133,7 +133,7 @@ ORDER BY prompt_version, model_name;
 -- 4. TURN STATISTICS VIEW
 -- Detailed turn-level analysis for understanding agent behavior over time
 -- ============================================================================
-CREATE OR REPLACE VIEW turn_statistics AS
+CREATE OR REPLACE VIEW v_turn_statistics AS
 SELECT
   aa.experiment_id,
   e.model_name,
@@ -170,7 +170,7 @@ ORDER BY aa.experiment_id, aa.turn_number;
 -- 5. ACTION PATTERN ANALYSIS VIEW
 -- Tool usage patterns and sequences for understanding decision-making
 -- ============================================================================
-CREATE OR REPLACE VIEW action_patterns AS
+CREATE OR REPLACE VIEW v_action_patterns AS
 SELECT
   e.id AS experiment_id,
   e.model_name,
@@ -212,7 +212,7 @@ ORDER BY e.id;
 -- 6. COST ANALYSIS VIEW
 -- Detailed cost breakdown and trends
 -- ============================================================================
-CREATE OR REPLACE VIEW cost_analysis AS
+CREATE OR REPLACE VIEW v_cost_analysis AS
 SELECT
   e.id AS experiment_id,
   e.model_name,
@@ -253,7 +253,7 @@ ORDER BY e.id DESC;
 -- 7. DAILY SUMMARY VIEW
 -- Aggregate statistics by day for tracking trends
 -- ============================================================================
-CREATE OR REPLACE VIEW daily_summary AS
+CREATE OR REPLACE VIEW v_daily_summary AS
 SELECT
   started_at::date AS date,
 
@@ -276,7 +276,7 @@ SELECT
   COUNT(DISTINCT model_name) AS distinct_models_tested,
   array_agg(DISTINCT model_name ORDER BY model_name) AS models_used
 
-FROM experiment_summary
+FROM v_experiment_summary
 GROUP BY started_at::date
 ORDER BY date DESC;
 
@@ -286,21 +286,21 @@ ORDER BY date DESC;
 -- ============================================================================
 
 -- See all experiments with key metrics:
--- SELECT * FROM experiment_summary;
+-- SELECT * FROM v_experiment_summary;
 
 -- Compare models:
--- SELECT * FROM model_performance;
+-- SELECT * FROM v_model_performance;
 
 -- Compare prompt variants for a specific model:
--- SELECT * FROM prompt_variant_analysis WHERE model_name = 'claude-3-haiku';
+-- SELECT * FROM v_prompt_variant_analysis WHERE model_name = 'claude-3-haiku';
 
 -- Analyze turn-by-turn behavior for an experiment:
--- SELECT * FROM turn_statistics WHERE experiment_id = 97;
+-- SELECT * FROM v_turn_statistics WHERE experiment_id = 97;
 
 -- Find most cost-efficient prompt variant:
 -- SELECT prompt_version, model_name, avg_cost_per_action
--- FROM prompt_variant_analysis
+-- FROM v_prompt_variant_analysis
 -- ORDER BY avg_cost_per_action;
 
 -- Track daily spending:
--- SELECT date, total_cost_usd, experiments_run FROM daily_summary;
+-- SELECT date, total_cost_usd, experiments_run FROM v_daily_summary;
