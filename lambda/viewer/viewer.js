@@ -93,8 +93,10 @@ exports.handler = async (event) => {
       const db = await getDbClient();
 
       const result = await db.query(
-        `SELECT id, model_name, success, created_at, total_moves
+        `SELECT id, model_name, goal_found, started_at
          FROM experiments
+         WHERE completed_at IS NOT NULL
+           AND failure_reason IS NULL
          ORDER BY id DESC
          LIMIT 100`
       );
@@ -420,7 +422,7 @@ function getViewerHTML(colors) {
     let experimentData = null;
     let currentStep = 0;
     let autoplayInterval = null;
-    const CELL_SIZE = 10;
+    const CELL_SIZE = 12;  // 12px per cell = 720x720 for 60x60 grid
 
     // Check if already logged in
     window.onload = function() {
@@ -478,6 +480,11 @@ function getViewerHTML(colors) {
       document.getElementById('viewer-content').style.display = 'block';
       document.getElementById('user-info').innerHTML = \`\${username} (<a onclick="logout()">logout</a>)\`;
 
+      // Set initial canvas size (for 60x60 grid)
+      const canvas = document.getElementById('mazeCanvas');
+      canvas.width = 60 * CELL_SIZE;
+      canvas.height = 60 * CELL_SIZE;
+
       // Load experiments list
       await loadExperimentsList();
     }
@@ -496,15 +503,20 @@ function getViewerHTML(colors) {
         }
 
         const experiments = await response.json();
+        console.log('Loaded experiments:', experiments);
+
         const dropdown = document.getElementById('experimentDropdown');
         dropdown.innerHTML = '<option value="">Select an experiment...</option>';
 
         experiments.forEach(exp => {
           const option = document.createElement('option');
           option.value = exp.id;
-          const successIcon = exp.success ? '✓' : '✗';
-          const successClass = exp.success ? 'success' : 'failure';
-          option.textContent = \`\${exp.id} - \${exp.model_name} - \${successIcon} \${exp.success ? 'Success' : 'Failure'}\`;
+
+          const successIcon = exp.goal_found ? '✓' : '✗';
+          const successClass = exp.goal_found ? 'success' : 'failure';
+          const successText = exp.goal_found ? 'Success' : 'Failure';
+
+          option.textContent = \`\${exp.id} - \${exp.model_name} - \${successIcon} \${successText}\`;
           option.className = successClass;
           dropdown.appendChild(option);
         });
@@ -632,7 +644,7 @@ function getViewerHTML(colors) {
 
       // Update info display with comprehensive data
       const exp = experimentData.experiment;
-      const grid = experimentData.maze;
+      const mazeInfo = experimentData.maze;
       const action = currentStep < experimentData.actions.length ? experimentData.actions[currentStep] : null;
 
       let infoHTML = '<div class="section-title">Experiment Info</div>';
@@ -644,12 +656,31 @@ function getViewerHTML(colors) {
         infoHTML += \`<div class="stat"><strong>Prompt Version:</strong> \${exp.prompt_version}</div>\`;
       }
 
-      infoHTML += \`<div class="stat"><strong>Status:</strong> \${exp.status || 'N/A'}</div>\`;
-      infoHTML += \`<div class="stat"><strong>Success:</strong> <span class="\${exp.success ? 'success' : 'failure'}">\${exp.success ? 'Yes ✓' : 'No ✗'}</span></div>\`;
-      infoHTML += \`<div class="stat"><strong>Total Moves:</strong> \${exp.total_moves || experimentData.actions.length}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Goal Found:</strong> <span class="\${exp.goal_found ? 'success' : 'failure'}">\${exp.goal_found ? 'Yes ✓' : 'No ✗'}</span></div>\`;
 
-      if (exp.total_tokens) {
-        infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${exp.total_tokens.toLocaleString()}</div>\`;
+      if (exp.failure_reason) {
+        infoHTML += \`<div class="stat"><strong>Failure Reason:</strong> \${exp.failure_reason}</div>\`;
+      }
+
+      infoHTML += \`<div class="stat"><strong>Total Moves:</strong> \${experimentData.actions.length}</div>\`;
+
+      if (exp.total_input_tokens || exp.total_output_tokens) {
+        infoHTML += '<div class="section-title">Token Usage</div>';
+        if (exp.total_input_tokens) {
+          infoHTML += \`<div class="stat"><strong>Input Tokens:</strong> \${exp.total_input_tokens.toLocaleString()}</div>\`;
+        }
+        if (exp.total_output_tokens) {
+          infoHTML += \`<div class="stat"><strong>Output Tokens:</strong> \${exp.total_output_tokens.toLocaleString()}</div>\`;
+        }
+        const totalTokens = (exp.total_input_tokens || 0) + (exp.total_output_tokens || 0);
+        if (totalTokens > 0) {
+          infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${totalTokens.toLocaleString()}</div>\`;
+        }
+      }
+
+      if (exp.total_cost_usd) {
+        infoHTML += '<div class="section-title">Cost</div>';
+        infoHTML += \`<div class="stat"><strong>Total Cost:</strong> $\${exp.total_cost_usd.toFixed(6)}</div>\`;
       }
 
       if (exp.started_at) {
@@ -660,11 +691,11 @@ function getViewerHTML(colors) {
       }
 
       infoHTML += '<div class="section-title">Grid Info</div>';
-      infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${grid.name}</div>\`;
-      infoHTML += \`<div class="stat"><strong>Dimensions:</strong> \${grid.width} × \${grid.height}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${mazeInfo.name}</div>\`;
+      infoHTML += \`<div class="stat"><strong>Dimensions:</strong> \${mazeInfo.width} × \${mazeInfo.height}</div>\`;
 
-      if (grid.see_through_walls !== undefined) {
-        infoHTML += \`<div class="stat"><strong>See Through Walls:</strong> \${grid.see_through_walls ? 'Yes' : 'No'}</div>\`;
+      if (mazeInfo.see_through_walls !== undefined) {
+        infoHTML += \`<div class="stat"><strong>See Through Walls:</strong> \${mazeInfo.see_through_walls ? 'Yes' : 'No'}</div>\`;
       }
 
       if (exp.goal_description) {
@@ -685,8 +716,13 @@ function getViewerHTML(colors) {
 
         infoHTML += \`<div class="stat"><strong>Action Success:</strong> \${action.success ? 'Yes' : 'No (hit wall)'}</div>\`;
 
-        if (action.tokens_used) {
-          infoHTML += \`<div class="stat"><strong>Tokens Used:</strong> \${action.tokens_used.toLocaleString()}</div>\`;
+        if (action.input_tokens || action.output_tokens) {
+          const stepTokens = (action.input_tokens || 0) + (action.output_tokens || 0);
+          infoHTML += \`<div class="stat"><strong>Step Tokens:</strong> \${action.input_tokens || 0} in / \${action.output_tokens || 0} out (\${stepTokens} total)</div>\`;
+        }
+
+        if (action.cost_usd) {
+          infoHTML += \`<div class="stat"><strong>Step Cost:</strong> $\${action.cost_usd.toFixed(6)}</div>\`;
         }
 
         if (action.timestamp) {
