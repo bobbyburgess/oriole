@@ -382,6 +382,13 @@ function getViewerHTML(colors) {
         </div>
       </div>
 
+      <div style="margin-top: 10px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+          <input type="checkbox" id="showPath" onchange="render()" style="cursor: pointer;" />
+          <span>Show Path History</span>
+        </label>
+      </div>
+
       <div style="font-size: 14px; color: #999; margin-top: 10px;">
         <span id="stepInfo">No experiment loaded</span>
       </div>
@@ -609,6 +616,32 @@ function getViewerHTML(colors) {
             const [x, y] = coord.split(',').map(Number);
             ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
           }
+        }
+      }
+
+      // Draw path history if enabled
+      const showPath = document.getElementById('showPath')?.checked;
+      if (showPath && currentStep >= 0) {
+        const visitedPositions = new Set();
+
+        // Collect all positions the agent has been to up to current step
+        for (let i = 0; i <= currentStep; i++) {
+          const act = experimentData.actions[i];
+          // Add the "to" position if it exists, otherwise the "from" position
+          const posX = act.to_x !== null ? act.to_x : act.from_x;
+          const posY = act.to_y !== null ? act.to_y : act.from_y;
+
+          // Don't add current position (we'll draw the agent there)
+          if (i < currentStep) {
+            visitedPositions.add(\`\${posX},\${posY}\`);
+          }
+        }
+
+        // Draw path history in a subtle color
+        ctx.fillStyle = 'rgba(200, 150, 100, 0.3)';
+        for (const pos of visitedPositions) {
+          const [x, y] = pos.split(',').map(Number);
+          ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         }
       }
 

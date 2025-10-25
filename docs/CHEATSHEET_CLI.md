@@ -218,3 +218,62 @@ echo "Nova Premier: $NOVA_PREMIER_AGENT_ID"
   $(aws bedrock-agent list-agent-aliases --agent-id $NOVA_PRO_AGENT_ID --query 'agentAliasSummaries[0].agentAliasId' --output text) \
   nova-pro 1 v2
 ```
+
+## Viewer Color Configuration
+
+The web viewer colors are configurable via AWS Parameter Store. Changes take effect immediately on page refresh (no deployment needed).
+
+### Available Color Parameters
+
+```bash
+# View current color settings
+aws ssm get-parameters \
+  --names "/oriole/viewer/color/background" \
+          "/oriole/viewer/color/wall" \
+          "/oriole/viewer/color/goal" \
+          "/oriole/viewer/color/agent" \
+          "/oriole/viewer/color/seen" \
+  --query 'Parameters[*].[Name,Value]' \
+  --output table
+```
+
+### Update Colors
+
+```bash
+# Make walls darker
+aws ssm put-parameter \
+  --name "/oriole/viewer/color/wall" \
+  --value "#333" \
+  --overwrite
+
+# Change agent to blue (instead of green)
+aws ssm put-parameter \
+  --name "/oriole/viewer/color/agent" \
+  --value "#2196F3" \
+  --overwrite
+
+# Make path history more visible (increase opacity)
+aws ssm put-parameter \
+  --name "/oriole/viewer/color/seen" \
+  --value "rgba(100, 150, 255, 0.5)" \
+  --overwrite
+
+# Change goal to red
+aws ssm put-parameter \
+  --name "/oriole/viewer/color/goal" \
+  --value "#FF4444" \
+  --overwrite
+
+# Lighter background
+aws ssm put-parameter \
+  --name "/oriole/viewer/color/background" \
+  --value "#1a1a1a" \
+  --overwrite
+```
+
+**Current defaults:**
+- Background: `#0a0a0a` (very dark gray)
+- Wall: `#555` (medium gray)
+- Goal: `#FFD700` (gold)
+- Agent: `#4CAF50` (green)
+- Seen tiles: `rgba(100, 150, 255, 0.2)` (transparent blue)
