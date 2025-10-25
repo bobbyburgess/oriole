@@ -4,15 +4,15 @@
  * Polls SQS FIFO queue and starts Step Functions executions.
  *
  * Why this exists:
- * - SQS FIFO with MessageGroupId ensures experiments for the same model run sequentially
- * - Prevents rate limit conflicts when multiple experiments are queued
- * - Each model has its own "lane" (MessageGroupId) so different models run in parallel
+ * - Ensures only ONE experiment runs at a time (strict serialization)
+ * - Prevents Lambda throttling from concurrent Step Functions executions
+ * - SQS will requeue messages if an experiment is already running
  *
  * Flow:
- * EventBridge → SQS FIFO Queue (grouped by model) → This Lambda → Step Functions
+ * EventBridge → SQS FIFO Queue → This Lambda → Step Functions (one at a time)
  */
 
-const { SFNClient, StartExecutionCommand } = require('@aws-sdk/client-sfn');
+const { SFNClient, StartExecutionCommand, ListExecutionsCommand } = require('@aws-sdk/client-sfn');
 
 const sfnClient = new SFNClient({ region: process.env.AWS_REGION || 'us-west-2' });
 const STATE_MACHINE_ARN = process.env.STATE_MACHINE_ARN;
@@ -20,11 +20,29 @@ const STATE_MACHINE_ARN = process.env.STATE_MACHINE_ARN;
 exports.handler = async (event) => {
   console.log('Processing SQS messages:', JSON.stringify(event, null, 2));
 
-  // Serialization is handled by:
-  // 1. FIFO queue with MessageGroupId = "all-experiments" (processes messages in order)
-  // 2. reservedConcurrentExecutions = 1 (only one Lambda instance)
-  // 3. batchSize = 1 (process one message at a time)
-  // No need to check for running executions - the queue ensures serialization
+  // CRITICAL: Check if any experiment is currently running
+  // If yes, throw error to requeue message and try again later
+  const listCommand = new ListExecutionsCommand({
+    stateMachineArn: STATE_MACHINE_ARN,
+    statusFilter: 'RUNNING',
+    maxResults: 1
+  });
+
+  const runningExecutions = await sfnClient.send(listCommand);
+
+  if (runningExecutions.executions && runningExecutions.executions.length > 0) {
+    const runningExecution = runningExecutions.executions[0];
+    console.log('Experiment already running, requeueing message:', {
+      runningExecutionArn: runningExecution.executionArn,
+      startDate: runningExecution.startDate
+    });
+
+    // Throw error to make SQS requeue this message
+    // SQS visibility timeout will delay retry automatically
+    throw new Error('Experiment already running - message will be requeued');
+  }
+
+  console.log('No running experiments - proceeding to start new execution');
 
   for (const record of event.Records) {
     // Parse the EventBridge event from SQS message body
