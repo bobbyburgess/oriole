@@ -15,6 +15,7 @@
 
 const { Client } = require('pg');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { getCurrentPosition } = require('../shared/db');
 
 let dbClient = null;
 let cachedDbPassword = null;
@@ -80,13 +81,23 @@ exports.handler = async (event) => {
       promptVersion = 'v1',
       mazeId,
       goalDescription = 'Find the goal marker',
-      startX = 2,
-      startY = 2
+      resumeFromExperimentId
     } = payload;
+
+    let { startX = 2, startY = 2 } = payload;
 
     // Validate required parameters
     if (!agentId || !agentAliasId || !modelName || !mazeId) {
       throw new Error('Missing required parameters: agentId, agentAliasId, modelName, mazeId');
+    }
+
+    // Handle resume logic: override start position with last known position from failed experiment
+    if (resumeFromExperimentId) {
+      console.log(`Resuming from experiment ${resumeFromExperimentId}`);
+      const resumePosition = await getCurrentPosition(resumeFromExperimentId);
+      startX = resumePosition.x;
+      startY = resumePosition.y;
+      console.log(`Resume position: (${startX}, ${startY})`);
     }
 
     // Note: prompt text is fetched at runtime in invoke-agent, not stored in DB

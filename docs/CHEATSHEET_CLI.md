@@ -190,6 +190,88 @@ psql -c "SELECT id, model_name, started_at
   claude-3-5-haiku 1 v2
 ```
 
+### Trigger New Experiment (Simplified)
+
+The `trigger-by-name.sh` script looks up agent IDs automatically:
+
+```bash
+# Trigger experiment with model name
+./scripts/trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive
+
+# Other examples
+./scripts/trigger-by-name.sh claude-3.5-haiku 1 v2
+./scripts/trigger-by-name.sh nova-pro 3 v3-react-basic
+```
+
+## Resuming Failed Experiments
+
+If an experiment fails (e.g., throttling errors, timeouts), you can resume it from where it left off instead of starting over.
+
+### Step 1: Check Failed Experiments
+
+Find experiments that failed and need resuming:
+
+```bash
+# Find failed experiments
+psql -c "SELECT id, model_name, prompt_version,
+         CASE WHEN failure_reason IS NOT NULL
+              THEN failure_reason::json->>'errorType'
+              ELSE 'Unknown'
+         END as error_type,
+         (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
+         (SELECT from_x || ',' || from_y
+          FROM agent_actions
+          WHERE experiment_id = experiments.id
+          ORDER BY step_number DESC LIMIT 1) as last_position
+         FROM experiments
+         WHERE completed_at IS NOT NULL
+           AND goal_found = false
+           AND failure_reason IS NOT NULL
+         ORDER BY id DESC LIMIT 10;"
+```
+
+**Output example:**
+```
+ id  |   model_name    | prompt_version |      error_type       | actions | last_position
+-----+-----------------+----------------+-----------------------+---------+---------------
+ 150 | claude-3-haiku  | v3-react-basic | ThrottlingException   |      87 | 15,12
+ 148 | claude-3.5-haiku| v2             | ReferenceError        |      42 | 8,9
+```
+
+### Step 2: Wait for Cooldown (If Throttled)
+
+If the failure was due to throttling, wait for the rate limit to reset (typically 1-5 minutes).
+
+### Step 3: Resume the Experiment
+
+```bash
+# Resume from experiment 150's last position
+./scripts/trigger-by-name.sh claude-3-haiku 1 v3-react-basic --resume-from 150
+```
+
+**What happens:**
+1. Creates a new experiment record with the same configuration
+2. Starts from the last known position of experiment 150
+3. Continues exploration from where it left off
+4. Uses the same maze, prompt, and model configuration
+
+**Important notes:**
+- The resumed experiment gets a new experiment ID (not reusing 150)
+- The original failed experiment record remains unchanged in the database
+- Resume fetches the most recent position from `agent_actions` table
+- If the last action was a recall (no movement), it uses the `from_x/from_y` position
+
+### Step 4: Monitor the Resumed Experiment
+
+```bash
+# Get the latest experiment ID
+LATEST_ID=$(psql -t -c "SELECT MAX(id) FROM experiments;")
+
+# Watch it progress
+watch -n 5 "psql -t -c \"SELECT COUNT(*) || ' steps, turn ' || MAX(turn_number)
+            FROM agent_actions WHERE experiment_id = $LATEST_ID;\""
+```
+
 ## Quick Reference: Agent IDs
 
 Agent IDs are stored in `.env` as environment variables:

@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # Script to trigger a maze experiment via EventBridge
-# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version]
+# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from-experiment-id]
 
 AGENT_ID=$1
 AGENT_ALIAS_ID=$2
 MODEL_NAME=$3
 MAZE_ID=$4
 PROMPT_VERSION=${5:-v1}  # Default to v1 if not provided
+RESUME_FROM=${6:-""}  # Optional resume-from experiment ID
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
   echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version]"
@@ -30,7 +31,23 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
 fi
 
 # Build event detail
-EVENT_DETAIL=$(cat <<EOF
+if [ -n "$RESUME_FROM" ]; then
+  EVENT_DETAIL=$(cat <<EOF
+{
+  "agentId": "$AGENT_ID",
+  "agentAliasId": "$AGENT_ALIAS_ID",
+  "modelName": "$MODEL_NAME",
+  "promptVersion": "$PROMPT_VERSION",
+  "mazeId": $MAZE_ID,
+  "goalDescription": "Find the goal marker",
+  "startX": 2,
+  "startY": 2,
+  "resumeFromExperimentId": $RESUME_FROM
+}
+EOF
+)
+else
+  EVENT_DETAIL=$(cat <<EOF
 {
   "agentId": "$AGENT_ID",
   "agentAliasId": "$AGENT_ALIAS_ID",
@@ -43,6 +60,7 @@ EVENT_DETAIL=$(cat <<EOF
 }
 EOF
 )
+fi
 
 echo "Triggering experiment with:"
 echo "$EVENT_DETAIL"
