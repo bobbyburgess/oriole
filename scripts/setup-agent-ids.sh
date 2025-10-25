@@ -63,9 +63,21 @@ for MODEL_CONFIG in "${MODELS[@]}"; do
     --no-cli-pager 2>/dev/null | \
     jq -r '.agentAliasSummaries[] | select(.agentAliasName == "prod") | .agentAliasId')
 
+  # Create alias if it doesn't exist
   if [ -z "$ALIAS_ID" ]; then
-    echo "❌ Failed to find 'prod' alias for $MODEL_NAME (agent: $AGENT_ID)"
-    continue
+    echo "  Creating 'prod' alias for $MODEL_NAME (agent: $AGENT_ID)..."
+    ALIAS_ID=$(AWS_PROFILE=$PROFILE aws bedrock-agent create-agent-alias \
+      --agent-id "$AGENT_ID" \
+      --agent-alias-name "prod" \
+      --region $REGION \
+      --no-cli-pager 2>/dev/null | \
+      jq -r '.agentAlias.agentAliasId')
+
+    if [ -z "$ALIAS_ID" ]; then
+      echo "❌ Failed to create 'prod' alias for $MODEL_NAME"
+      continue
+    fi
+    echo "    ✅ Created alias: $ALIAS_ID"
   fi
 
   echo "  $MODEL_NAME:"
