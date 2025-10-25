@@ -1,5 +1,5 @@
 // Invoke Agent Lambda
-// Calls AWS Bedrock Agent to perform one iteration of maze navigation
+// Calls AWS Bedrock Agent to perform one iteration of grid exploration
 //
 // How it works:
 // 1. Receives current experiment state (position, experiment ID, etc.) from check-progress
@@ -84,7 +84,7 @@ exports.handler = async (event) => {
     // Construct the input for this iteration
     // Critical: We must explicitly tell the agent its current position
     // The agent has no memory of position across orchestration loop iterations
-    const input = `You are continuing a maze navigation experiment.
+    const input = `You are continuing a grid exploration experiment.
 
 Experiment ID: ${experimentId}
 Your Current Position: (${currentX}, ${currentY})
