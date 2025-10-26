@@ -11,12 +11,17 @@
 #   ./trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive --resume-from 150
 #
 # Available models:
-#   - claude-3.5-haiku
-#   - claude-3-haiku
-#   - nova-micro
-#   - nova-lite
-#   - nova-pro
-#   - nova-premier
+#   AWS Bedrock:
+#     - claude-3.5-haiku
+#     - claude-3-haiku
+#     - nova-micro
+#     - nova-lite
+#     - nova-pro
+#     - nova-premier
+#   Local Ollama (any model name from `ollama list`, e.g.):
+#     - llama3.2:latest
+#     - qwen2.5-coder:latest
+#     - mistral:latest
 
 set -e
 
@@ -46,58 +51,77 @@ if [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
   echo "Usage: $0 <model-name> <maze-id> [prompt-version] [--resume-from <experiment-id>]"
   echo ""
   echo "Available models:"
-  echo "  - claude-3.5-haiku"
-  echo "  - claude-3-haiku"
-  echo "  - nova-micro"
-  echo "  - nova-lite"
-  echo "  - nova-pro"
-  echo "  - nova-premier"
+  echo "  AWS Bedrock:"
+  echo "    - claude-3.5-haiku"
+  echo "    - claude-3-haiku"
+  echo "    - nova-micro"
+  echo "    - nova-lite"
+  echo "    - nova-pro"
+  echo "    - nova-premier"
+  echo "  Local Ollama (use any model from 'ollama list'):"
+  echo "    - llama3.2:latest"
+  echo "    - qwen2.5-coder:latest"
   echo ""
   echo "Example:"
   echo "  $0 claude-3.5-haiku 1 v2"
+  echo "  $0 llama3.2:latest 1 v1"
   echo "  $0 claude-3-haiku 1 v3-react-adaptive --resume-from 150"
   exit 1
 fi
 
-echo "🔍 Looking up agent configuration for: $MODEL_NAME"
-
-# Fetch agent ID from Parameter Store
-AGENT_ID=$(AWS_PROFILE=$PROFILE aws ssm get-parameter \
-  --name "/oriole/agents/$MODEL_NAME/id" \
-  --region $REGION \
-  --query 'Parameter.Value' \
-  --output text 2>/dev/null)
-
-if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "None" ]; then
-  echo "❌ Error: Agent ID not found for model '$MODEL_NAME'"
+# Check if this is an Ollama model (contains ':' or matches known Ollama patterns)
+if [[ "$MODEL_NAME" == *":"* ]] || [[ "$MODEL_NAME" =~ ^(llama|qwen|mistral|phi|gemma|codellama|deepseek) ]]; then
+  echo "🦙 Detected Ollama model: $MODEL_NAME"
+  echo "✅ Using Ollama invoke path"
+  if [ -n "$RESUME_FROM" ]; then
+    echo "   Resume from: Experiment $RESUME_FROM"
+  fi
   echo ""
-  echo "Have you run the setup script?"
-  echo "  ./scripts/setup-agent-ids.sh"
-  exit 1
-fi
 
-# Fetch alias ID from Parameter Store
-ALIAS_ID=$(AWS_PROFILE=$PROFILE aws ssm get-parameter \
-  --name "/oriole/agents/$MODEL_NAME/alias-id" \
-  --region $REGION \
-  --query 'Parameter.Value' \
-  --output text 2>/dev/null)
+  # For Ollama, use special marker values
+  AGENT_ID="OLLAMA"
+  ALIAS_ID="OLLAMA"
+else
+  echo "🔍 Looking up agent configuration for: $MODEL_NAME"
 
-if [ -z "$ALIAS_ID" ] || [ "$ALIAS_ID" = "None" ]; then
-  echo "❌ Error: Alias ID not found for model '$MODEL_NAME'"
+  # Fetch agent ID from Parameter Store
+  AGENT_ID=$(AWS_PROFILE=$PROFILE aws ssm get-parameter \
+    --name "/oriole/agents/$MODEL_NAME/id" \
+    --region $REGION \
+    --query 'Parameter.Value' \
+    --output text 2>/dev/null)
+
+  if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "None" ]; then
+    echo "❌ Error: Agent ID not found for model '$MODEL_NAME'"
+    echo ""
+    echo "Have you run the setup script?"
+    echo "  ./scripts/setup-agent-ids.sh"
+    exit 1
+  fi
+
+  # Fetch alias ID from Parameter Store
+  ALIAS_ID=$(AWS_PROFILE=$PROFILE aws ssm get-parameter \
+    --name "/oriole/agents/$MODEL_NAME/alias-id" \
+    --region $REGION \
+    --query 'Parameter.Value' \
+    --output text 2>/dev/null)
+
+  if [ -z "$ALIAS_ID" ] || [ "$ALIAS_ID" = "None" ]; then
+    echo "❌ Error: Alias ID not found for model '$MODEL_NAME'"
+    echo ""
+    echo "Have you run the setup script?"
+    echo "  ./scripts/setup-agent-ids.sh"
+    exit 1
+  fi
+
+  echo "✅ Found configuration:"
+  echo "   Agent ID: $AGENT_ID"
+  echo "   Alias ID: $ALIAS_ID"
+  if [ -n "$RESUME_FROM" ]; then
+    echo "   Resume from: Experiment $RESUME_FROM"
+  fi
   echo ""
-  echo "Have you run the setup script?"
-  echo "  ./scripts/setup-agent-ids.sh"
-  exit 1
 fi
-
-echo "✅ Found configuration:"
-echo "   Agent ID: $AGENT_ID"
-echo "   Alias ID: $ALIAS_ID"
-if [ -n "$RESUME_FROM" ]; then
-  echo "   Resume from: Experiment $RESUME_FROM"
-fi
-echo ""
 
 # Call the original trigger script with the resolved IDs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
