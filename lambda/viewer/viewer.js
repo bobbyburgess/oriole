@@ -93,10 +93,10 @@ exports.handler = async (event) => {
       const db = await getDbClient();
 
       const result = await db.query(
-        `SELECT id, model_name, goal_found, started_at
+        `SELECT id, model_name, goal_found, started_at,
+                failure_reason::json->>'errorType' as error_type
          FROM experiments
          WHERE completed_at IS NOT NULL
-           AND failure_reason IS NULL
          ORDER BY id DESC
          LIMIT 100`
       );
@@ -124,8 +124,9 @@ exports.handler = async (event) => {
       const db = await getDbClient();
 
       // Get experiment details
+      // Use view to get calculated token/cost columns
       const expResult = await db.query(
-        'SELECT * FROM experiments WHERE id = $1',
+        'SELECT * FROM v_experiments_with_costs WHERE id = $1',
         [experimentId]
       );
 
@@ -233,10 +234,24 @@ function getViewerHTML(colors) {
       top: 0;
       left: 0;
       border: none;
+      cursor: crosshair;
     }
     canvas {
       display: block;
       background: ${colors.background};
+    }
+    #canvas-tooltip {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.9);
+      color: #e0e0e0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+      pointer-events: none;
+      display: none;
+      z-index: 1000;
+      border: 1px solid #555;
     }
     #info {
       position: fixed;
@@ -349,6 +364,9 @@ function getViewerHTML(colors) {
     .failure {
       color: #ff6b6b;
     }
+    .throttled {
+      color: #ffb347;
+    }
   </style>
 </head>
 <body>
@@ -363,6 +381,7 @@ function getViewerHTML(colors) {
   <div id="viewer-content">
     <div id="canvas-container">
       <canvas id="mazeCanvas"></canvas>
+      <div id="canvas-tooltip"></div>
     </div>
 
     <div id="controls">
@@ -478,6 +497,32 @@ function getViewerHTML(colors) {
       canvas.width = 60 * CELL_SIZE;
       canvas.height = 60 * CELL_SIZE;
 
+      // Add tooltip functionality for canvas
+      const tooltip = document.getElementById('canvas-tooltip');
+      canvas.addEventListener('mousemove', (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        // Calculate grid coordinates
+        const gridX = Math.floor(mouseX / CELL_SIZE);
+        const gridY = Math.floor(mouseY / CELL_SIZE);
+
+        // Check if within grid bounds
+        if (gridX >= 0 && gridX < 60 && gridY >= 0 && gridY < 60) {
+          tooltip.textContent = \`(\${gridX}, \${gridY})\`;
+          tooltip.style.left = (event.clientX + 15) + 'px';
+          tooltip.style.top = (event.clientY + 15) + 'px';
+          tooltip.style.display = 'block';
+        } else {
+          tooltip.style.display = 'none';
+        }
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+      });
+
       // Load experiments list
       await loadExperimentsList();
     }
@@ -505,11 +550,24 @@ function getViewerHTML(colors) {
           const option = document.createElement('option');
           option.value = exp.id;
 
-          const successIcon = exp.goal_found ? '✓' : '✗';
-          const successClass = exp.goal_found ? 'success' : 'failure';
+          // Determine display text and style based on experiment outcome
+          let displayText, className;
+          if (exp.error_type) {
+            // Failed experiment (e.g., ThrottlingException)
+            displayText = \`\${exp.id} - \${exp.model_name} ⚠ \${exp.error_type}\`;
+            className = 'throttled';
+          } else if (exp.goal_found) {
+            // Successfully found the goal
+            displayText = \`\${exp.id} - \${exp.model_name} ✓\`;
+            className = 'success';
+          } else {
+            // Completed but didn't find goal
+            displayText = \`\${exp.id} - \${exp.model_name} ✗\`;
+            className = 'failure';
+          }
 
-          option.textContent = \`\${exp.id} - \${exp.model_name} \${successIcon}\`;
-          option.className = successClass;
+          option.textContent = displayText;
+          option.className = className;
           dropdown.appendChild(option);
         });
 
@@ -666,8 +724,32 @@ function getViewerHTML(colors) {
       const action = currentStep < experimentData.actions.length ? experimentData.actions[currentStep] : null;
 
       let infoHTML = '';
-      infoHTML += \`<div class="stat"><strong>Experiment ID:</strong> \${exp.id}</div>\`;
-      infoHTML += \`<div class="stat"><strong>Agent ID:</strong> \${exp.agent_id || 'N/A'}</div>\`;
+
+      // Step-specific info first (if action exists)
+      if (action) {
+        if (action.timestamp) {
+          infoHTML += \`<div class="stat"><strong>Timestamp:</strong> \${new Date(action.timestamp).toLocaleString()}</div>\`;
+        }
+      }
+
+      // Grid info
+      infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${mazeInfo.name}</div>\`;
+
+      // Step details
+      if (action) {
+        infoHTML += \`<div class="stat"><strong>Step Number:</strong> \${action.step_number}</div>\`;
+        infoHTML += \`<div class="stat"><strong>Action:</strong> \${action.action_type}</div>\`;
+        infoHTML += \`<div class="stat"><strong>From:</strong> (\${action.from_x}, \${action.from_y})</div>\`;
+
+        if (action.to_x !== null && action.to_y !== null) {
+          infoHTML += \`<div class="stat"><strong>To:</strong> (\${action.to_x}, \${action.to_y})</div>\`;
+        }
+
+        infoHTML += \`<div class="stat"><strong>Action Success:</strong> \${action.success ? 'Yes' : 'No'}</div>\`;
+      }
+
+      // Experiment metadata
+      infoHTML += \`<div class="stat"><strong>Bedrock Agent ID:</strong> \${exp.agent_id || 'N/A'}</div>\`;
       infoHTML += \`<div class="stat"><strong>Model:</strong> \${exp.model_name || 'N/A'}</div>\`;
 
       if (exp.prompt_version) {
@@ -676,12 +758,10 @@ function getViewerHTML(colors) {
 
       infoHTML += \`<div class="stat"><strong>Goal Found:</strong> <span class="\${exp.goal_found ? 'success' : 'failure'}">\${exp.goal_found ? 'Yes ✓' : 'No ✗'}</span></div>\`;
 
-      if (exp.failure_reason) {
-        infoHTML += \`<div class="stat"><strong>Failure Reason:</strong> \${exp.failure_reason}</div>\`;
-      }
-
+      // Total moves
       infoHTML += \`<div class="stat"><strong>Total Moves:</strong> \${experimentData.actions.length}</div>\`;
 
+      // Token counts
       if (exp.total_input_tokens) {
         infoHTML += \`<div class="stat"><strong>Input Tokens:</strong> \${exp.total_input_tokens.toLocaleString()}</div>\`;
       }
@@ -693,57 +773,30 @@ function getViewerHTML(colors) {
         infoHTML += \`<div class="stat"><strong>Total Tokens:</strong> \${totalTokens.toLocaleString()}</div>\`;
       }
 
+      // Cost
       if (exp.total_cost_usd) {
         infoHTML += \`<div class="stat"><strong>Total Cost:</strong> $\${Number(exp.total_cost_usd).toFixed(6)}</div>\`;
       }
 
-      if (exp.started_at) {
-        infoHTML += \`<div class="stat"><strong>Started:</strong> \${new Date(exp.started_at).toLocaleString()}</div>\`;
-      }
-      if (exp.completed_at) {
-        infoHTML += \`<div class="stat"><strong>Completed:</strong> \${new Date(exp.completed_at).toLocaleString()}</div>\`;
+      // Real-time duration
+      if (exp.started_at && exp.completed_at) {
+        const start = new Date(exp.started_at);
+        const end = new Date(exp.completed_at);
+        const durationMs = end - start;
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = Math.floor((durationMs % 60000) / 1000);
+        const durationStr = \`\${minutes}m \${seconds}s\`;
+        infoHTML += \`<div class="stat"><strong>Real-time Duration:</strong> \${durationStr} (\${start.toLocaleString()} - \${end.toLocaleString()})</div>\`;
       }
 
-      infoHTML += \`<div class="stat"><strong>Grid Name:</strong> \${mazeInfo.name}</div>\`;
-      infoHTML += \`<div class="stat"><strong>Dimensions:</strong> \${mazeInfo.width} × \${mazeInfo.height}</div>\`;
-
+      // See through walls
       if (mazeInfo.see_through_walls !== undefined) {
         infoHTML += \`<div class="stat"><strong>See Through Walls:</strong> \${mazeInfo.see_through_walls ? 'Yes' : 'No'}</div>\`;
       }
 
-      if (exp.goal_description) {
-        infoHTML += \`<div class="stat"><strong>Goal:</strong> \${exp.goal_description}</div>\`;
-      }
-
-      infoHTML += \`<div class="stat"><strong>Start Position:</strong> (\${exp.start_x}, \${exp.start_y})</div>\`;
-
-      if (action) {
-        infoHTML += \`<div class="stat"><strong>Step Number:</strong> \${action.step_number}</div>\`;
-        infoHTML += \`<div class="stat"><strong>Action:</strong> \${action.action_type}</div>\`;
-        infoHTML += \`<div class="stat"><strong>From:</strong> (\${action.from_x}, \${action.from_y})</div>\`;
-
-        if (action.to_x !== null && action.to_y !== null) {
-          infoHTML += \`<div class="stat"><strong>To:</strong> (\${action.to_x}, \${action.to_y})</div>\`;
-        }
-
-        infoHTML += \`<div class="stat"><strong>Action Success:</strong> \${action.success ? 'Yes' : 'No (hit wall)'}</div>\`;
-
-        if (action.input_tokens || action.output_tokens) {
-          const stepTokens = (action.input_tokens || 0) + (action.output_tokens || 0);
-          infoHTML += \`<div class="stat"><strong>Step Tokens:</strong> \${action.input_tokens || 0} in / \${action.output_tokens || 0} out (\${stepTokens} total)</div>\`;
-        }
-
-        if (action.cost_usd) {
-          infoHTML += \`<div class="stat"><strong>Step Cost:</strong> $\${Number(action.cost_usd).toFixed(6)}</div>\`;
-        }
-
-        if (action.timestamp) {
-          infoHTML += \`<div class="stat"><strong>Timestamp:</strong> \${new Date(action.timestamp).toLocaleString()}</div>\`;
-        }
-
-        if (action.reasoning) {
-          infoHTML += \`<div class="stat"><strong>Reasoning:</strong> \${action.reasoning}</div>\`;
-        }
+      // Reasoning (last, as it can be long)
+      if (action && action.reasoning) {
+        infoHTML += \`<div class="stat"><strong>Reasoning:</strong> \${action.reasoning}</div>\`;
       }
 
       document.getElementById('experimentInfo').innerHTML = infoHTML;

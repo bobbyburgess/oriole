@@ -83,8 +83,8 @@ exports.handler = async (event) => {
     }
 
     // Normal completion path - check if goal was found
-    // Note: Token counts are tracked in experiments table via check-progress.js
-    // No need to aggregate from agent_actions (we use total_input_tokens + total_output_tokens)
+    // Note: Token/cost data is stored per-turn in agent_actions table
+    // Use experiments_with_costs view to calculate totals (denormalized columns removed)
 
     // Check if the agent found the goal
     // We look at the most recent action's tiles_seen field

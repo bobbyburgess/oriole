@@ -13,7 +13,7 @@ SELECT
   e.agent_id,
   e.started_at,
   e.completed_at,
-  e.success,
+  e.goal_found AS success,  -- Alias for compatibility with downstream views
 
   -- Time metrics
   EXTRACT(EPOCH FROM (e.completed_at - e.started_at)) / 60 AS duration_minutes,
@@ -47,10 +47,11 @@ SELECT
   -- Tool usage patterns
   COUNT(CASE WHEN aa.action_type = 'recall_all' THEN 1 END) AS recall_count
 
-FROM experiments e
+FROM v_experiments_with_costs e  -- Use view for calculated token/cost columns
 LEFT JOIN agent_actions aa ON e.id = aa.experiment_id
 WHERE e.completed_at IS NOT NULL  -- Only completed experiments
-GROUP BY e.id
+GROUP BY e.id, e.model_name, e.prompt_version, e.agent_id, e.started_at, e.completed_at,
+         e.goal_found, e.total_input_tokens, e.total_output_tokens, e.total_cost_usd
 ORDER BY e.id DESC;
 
 
@@ -238,14 +239,15 @@ SELECT
 
   -- Success value (cost per successful outcome)
   CASE
-    WHEN e.success = true THEN e.total_cost_usd
+    WHEN e.goal_found = true THEN e.total_cost_usd
     ELSE NULL
   END AS cost_if_successful
 
-FROM experiments e
+FROM v_experiments_with_costs e  -- Use view for calculated token/cost columns
 LEFT JOIN agent_actions aa ON e.id = aa.experiment_id
 WHERE e.completed_at IS NOT NULL
-GROUP BY e.id
+GROUP BY e.id, e.model_name, e.prompt_version, e.started_at, e.completed_at,
+         e.goal_found, e.total_input_tokens, e.total_output_tokens, e.total_cost_usd
 ORDER BY e.id DESC;
 
 

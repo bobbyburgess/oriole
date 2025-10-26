@@ -142,10 +142,9 @@ exports.handler = async (event) => {
     const maxMoves = await getMaxMoves();
     const maxDurationMinutes = await getMaxDurationMinutes();
 
-    // Get experiment current state including cumulative tokens/cost
+    // Get experiment current state
     const expResult = await db.query(
-      `SELECT goal_found, started_at,
-              total_input_tokens, total_output_tokens, total_cost_usd
+      `SELECT goal_found, started_at
        FROM experiments WHERE id = $1`,
       [experimentId]
     );
@@ -158,24 +157,22 @@ exports.handler = async (event) => {
     const goalFound = experiment.goal_found;
     const startedAt = new Date(experiment.started_at);
 
-    // Calculate cumulative totals
-    // CRITICAL: Parse database values as integers to prevent string concatenation
-    const cumulativeInputTokens = parseInt(experiment.total_input_tokens || 0) + invocationTokensIn;
-    const cumulativeOutputTokens = parseInt(experiment.total_output_tokens || 0) + invocationTokensOut;
-    const cumulativeCost = parseFloat(experiment.total_cost_usd || 0) + invocationCost;
-
-    // Update experiment with new cumulative totals
-    await db.query(
-      `UPDATE experiments
-       SET total_input_tokens = $1,
-           total_output_tokens = $2,
-           total_cost_usd = $3
-       WHERE id = $4`,
-      [cumulativeInputTokens, cumulativeOutputTokens, cumulativeCost, experimentId]
+    // Calculate cumulative totals from agent_actions for monitoring/logging
+    // Note: These are NOT written to experiments table (denormalization removed)
+    // The view experiments_with_costs will calculate these on-demand
+    const tokensResult = await db.query(
+      `SELECT
+        COALESCE(SUM(input_tokens), 0) as total_input,
+        COALESCE(SUM(output_tokens), 0) as total_output
+       FROM agent_actions WHERE experiment_id = $1`,
+      [experimentId]
     );
+    const cumulativeInputTokens = parseInt(tokensResult.rows[0].total_input) + invocationTokensIn;
+    const cumulativeOutputTokens = parseInt(tokensResult.rows[0].total_output) + invocationTokensOut;
+    const cumulativeCost = invocationCost; // For this turn only, we'll sum from actions table for total
 
     // Update all actions from this turn with token data
-    // This allows per-turn token analysis from agent_actions table
+    // This is the source of truth for per-turn token tracking
     await updateTurnTokens(experimentId, turnNumber, invocationTokensIn, invocationTokensOut);
 
     // Count actual actions from agent_actions table

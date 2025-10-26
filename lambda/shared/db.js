@@ -54,10 +54,11 @@ async function getDbClient() {
 }
 
 // Get experiment details
+// Uses view to provide calculated token/cost columns from agent_actions aggregation
 async function getExperiment(experimentId) {
   const db = await getDbClient();
   const result = await db.query(
-    'SELECT * FROM experiments WHERE id = $1',
+    'SELECT * FROM v_experiments_with_costs WHERE id = $1',
     [experimentId]
   );
   return result.rows[0];
