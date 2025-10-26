@@ -244,6 +244,7 @@ exports.handler = async (event) => {
       currentX: currentPos.x,
       currentY: currentPos.y,
       // Pass through original event data for next step
+      // These fields flow through the entire state machine to maintain context
       agentId: event.agentId,
       agentAliasId: event.agentAliasId,
       modelName: event.modelName,
@@ -251,7 +252,10 @@ exports.handler = async (event) => {
       mazeId: event.mazeId,
       goalDescription: event.goalDescription,
       startX: event.startX,
-      startY: event.startY
+      startY: event.startY,
+      // CRITICAL: llmProvider routes to correct agent Lambda in AgentProviderRouter choice state
+      // See start-experiment.js for full LLM Provider Routing documentation
+      llmProvider: event.llmProvider || 'bedrock'  // Pass through for AgentProviderRouter choice state
     };
 
   } catch (error) {

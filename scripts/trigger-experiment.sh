@@ -30,6 +30,16 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
   exit 1
 fi
 
+# Determine LLM provider based on agent ID
+# AGENT_ID="OLLAMA" is a special marker for local Ollama calls (not a real Bedrock agent)
+# This triggers routing through invoke-agent-ollama Lambda instead of invoke-agent Lambda
+# See trigger-by-name.sh for auto-detection of Ollama models
+if [ "$AGENT_ID" = "OLLAMA" ]; then
+  LLM_PROVIDER="ollama"
+else
+  LLM_PROVIDER="bedrock"
+fi
+
 # Build event detail
 if [ -n "$RESUME_FROM" ]; then
   EVENT_DETAIL=$(cat <<EOF
@@ -42,7 +52,8 @@ if [ -n "$RESUME_FROM" ]; then
   "goalDescription": "Find the goal marker",
   "startX": 2,
   "startY": 2,
-  "resumeFromExperimentId": $RESUME_FROM
+  "resumeFromExperimentId": $RESUME_FROM,
+  "llmProvider": "$LLM_PROVIDER"
 }
 EOF
 )
@@ -56,7 +67,8 @@ else
   "mazeId": $MAZE_ID,
   "goalDescription": "Find the goal marker",
   "startX": 2,
-  "startY": 2
+  "startY": 2,
+  "llmProvider": "$LLM_PROVIDER"
 }
 EOF
 )

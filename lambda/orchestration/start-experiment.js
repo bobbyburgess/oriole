@@ -74,6 +74,29 @@ exports.handler = async (event) => {
     // Extract detail from EventBridge event structure
     const payload = event.detail || event;
 
+    /**
+     * LLM PROVIDER ROUTING
+     *
+     * The llmProvider field is set at experiment start and passed through the entire state machine.
+     * This enables the SAME workflow to invoke either:
+     *   - AWS Bedrock Agent (invoke-agent.js): Full agent orchestration with tool calling
+     *   - Local Ollama (invoke-agent-ollama.js): Raw LLM output parsed for actions
+     *
+     * Flow: llmProvider='bedrock' -> Step Functions Choice -> InvokeBedrockAgent
+     *                  'ollama'   -> Step Functions Choice -> InvokeOllamaAgent
+     *
+     * Default: 'bedrock' (for backwards compatibility if field is missing)
+     *
+     * Selected by:
+     *   - Agent ID = "OLLAMA" in trigger script -> sets llmProvider='ollama'
+     *   - Normal agent ID -> sets llmProvider='bedrock'
+     *
+     * Each path has different:
+     *   - Handler Lambda (different logic, different response format)
+     *   - Timeout (Ollama faster since local)
+     *   - Token tracking (Ollama uses prompt_eval_count/eval_count vs inputTokens/outputTokens)
+     *   - Action execution (Bedrock = orchestrated by AWS, Ollama = sequential via invoke)
+     */
     const {
       agentId,
       agentAliasId,
@@ -81,7 +104,8 @@ exports.handler = async (event) => {
       promptVersion = 'v1',
       mazeId,
       goalDescription = 'Find the goal marker',
-      resumeFromExperimentId
+      resumeFromExperimentId,
+      llmProvider = 'bedrock'  // Default to bedrock for backwards compatibility
     } = payload;
 
     let { startX = 2, startY = 2 } = payload;
@@ -128,7 +152,8 @@ exports.handler = async (event) => {
       startY,
       currentX: startX,  // Initial position = start position
       currentY: startY,
-      turnNumber: 1  // Initialize turn counter
+      turnNumber: 1,  // Initialize turn counter
+      llmProvider  // Pass through to AgentProviderRouter choice state
     };
 
   } catch (error) {

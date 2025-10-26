@@ -46,8 +46,19 @@ exports.handler = async (event) => {
       };
     }
 
-    // Enforce recall cooldown to prevent agents from getting stuck in "thinking loops"
-    // Without this, agents tend to call recall_all repeatedly without exploring
+    /**
+     * Enforce recall cooldown to prevent agents from getting stuck in "thinking loops"
+     *
+     * BEHAVIOR PROBLEM: Without cooldown, LLMs tend to repeatedly call recall_all
+     *                   without exploring, trying to "reason" their way through the maze
+     *                   Example: recall_all -> recall_all -> recall_all (no movement!)
+     *
+     * SOLUTION: Force minimum exploration between recalls
+     *          Count only MOVEMENT actions (move_*), not other recalls
+     *          This ensures agent is actively exploring, not just thinking
+     *
+     * Default: 2 movements required between recalls (configurable via Parameter Store)
+     */
     const recallInterval = await getRecallInterval();
     const dbClient = await db.getDbClient();
 

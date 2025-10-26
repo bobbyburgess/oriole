@@ -17,7 +17,9 @@ const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const bedrockClient = new BedrockAgentRuntimeClient();
 const ssmClient = new SSMClient();
 
-// Cache prompts and pricing to avoid repeated SSM calls
+// Cache prompts and pricing to avoid repeated SSM calls in Lambda warm invocations
+// This reduces latency for frequently-called prompts and reduces SSM API costs
+// In warm Lambda execution environment, these caches persist across invocations
 const promptCache = {};
 let pricingCache = null;
 
@@ -49,6 +51,20 @@ async function getPricing() {
   return pricingCache;
 }
 
+/**
+ * Calculate monetary cost for this invocation
+ *
+ * Required for tracking total experiment spend across multiple turns.
+ * Different models have different pricing tiers (input/output tokens cost differently).
+ *
+ * Pricing is stored in Parameter Store at /oriole/bedrock/pricing
+ * Format: {
+ *   "claude-3-5-haiku": {input_per_mtok: 0.80, output_per_mtok: 4.00},
+ *   "claude-3-haiku": {input_per_mtok: 0.25, output_per_mtok: 1.25}
+ * }
+ *
+ * Pricing units are per million tokens (mtok), so we divide by 1,000,000
+ */
 function calculateCost(modelName, inputTokens, outputTokens, pricing) {
   const modelPricing = pricing[modelName];
   if (!modelPricing) {
@@ -97,13 +113,26 @@ When you call any action, always include experimentId=${experimentId} in your re
     console.log('Invoking agent with input:', input);
     console.log(`Turn number: ${turnNumber}`);
 
-    // Invoke the Bedrock Agent (single API call per turn)
-    // This ONE call may result in multiple tool invocations handled by Bedrock's orchestration
-    // SessionId keeps conversation context (agent can reference previous tool results)
-    // But position must be in prompt - agent doesn't track spatial state internally
-    // SessionAttributes pass through to action handlers via router.js
-    // Use unique session ID per turn to force fresh context (no history accumulation)
-    // This ensures constant input tokens instead of linear growth
+    /**
+     * SESSION ID STRATEGY: Unique per turn to prevent context accumulation
+     *
+     * If we reused the same sessionId across turns (e.g., experiment-{id}):
+     *   - Bedrock Agent would maintain conversation history
+     *   - Input token count would grow: Turn 1: 500 tokens, Turn 2: 1000 tokens, etc.
+     *   - After 100 turns with 20-token growth per turn: 2000 extra input tokens = cost overrun
+     *
+     * By using unique sessionId per turn (experiment-{id}-turn-{turnNumber}):
+     *   - Each turn is independent (no conversation history)
+     *   - Input tokens stay constant (~500 tokens per turn)
+     *   - Cost is predictable and linear with number of turns
+     *
+     * Trade-off: Agent can't reference "I did X earlier and it led to Y"
+     *            But position is provided in prompt, so agent knows spatial history
+     *
+     * Note: This ONE Bedrock call may result in multiple tool invocations
+     *       handled by Bedrock's orchestration within a SINGLE turn.
+     *       SessionAttributes pass through to action handlers via router.js
+     */
     const sessionId = `experiment-${experimentId}-turn-${turnNumber}`;
 
     const command = new InvokeAgentCommand({
