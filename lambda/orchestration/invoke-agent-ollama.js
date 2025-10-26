@@ -1,20 +1,21 @@
-// Invoke Agent Lambda - Ollama Edition
-// Calls local Ollama via webhook instead of AWS Bedrock Agent
+// Invoke Agent Lambda - Ollama Edition with Function Calling
+// Uses Ollama's native function calling to match Bedrock Agent behavior
 //
 // How it works:
 // 1. Receives current experiment state (position, experiment ID, etc.) from check-progress
-// 2. Constructs a prompt telling the LLM where it is and what it can do
-// 3. Calls Ollama via ngrok webhook with API key authentication
-// 4. Parses actions from LLM response
-// 5. Executes actions by directly invoking router Lambda for each action
-// 6. Returns after completing turn (all actions executed)
+// 2. Constructs initial prompt with current position and goal
+// 3. Calls Ollama with function/tool definitions (same as Bedrock Agent)
+// 4. Ollama returns tool calls in structured format (not text parsing!)
+// 5. Executes each tool via action router Lambda
+// 6. Feeds tool results back to Ollama with vision data
+// 7. Repeats until Ollama stops calling tools or max 8 actions reached
 //
-// Important: Each invocation is stateless from the LLM's perspective
-// Position must be provided explicitly each turn (no conversation history)
+// This matches Bedrock Agent's orchestration loop for A/B testing
 
 const https = require('https');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
+const { getOllamaTools } = require('../shared/tools');
 
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
@@ -53,13 +54,26 @@ async function getOllamaApiKey() {
   return response.Parameter.Value;
 }
 
-// Call Ollama via HTTPS webhook
-async function callOllama(endpoint, model, prompt, apiKey) {
+/**
+ * Call Ollama chat API with function calling support
+ *
+ * Uses /api/chat endpoint (not /api/generate) for conversational tool calling
+ * Ollama supports OpenAI-compatible function calling format
+ *
+ * @param {string} endpoint - Ollama HTTPS endpoint
+ * @param {string} model - Model name (e.g., "llama3.2:latest")
+ * @param {Array} messages - Conversation history with tool results
+ * @param {string} apiKey - API key for auth proxy
+ * @param {Array} tools - Tool definitions in OpenAI format
+ * @returns {Promise} Ollama response with potential tool_calls
+ */
+async function callOllamaChat(endpoint, model, messages, apiKey, tools) {
   return new Promise((resolve, reject) => {
-    const url = new URL(`${endpoint}/api/generate`);
+    const url = new URL(`${endpoint}/api/chat`);
     const postData = JSON.stringify({
       model,
-      prompt,
+      messages,
+      tools,
       stream: false,
       options: {
         temperature: 0.7,
@@ -97,40 +111,12 @@ async function callOllama(endpoint, model, prompt, apiKey) {
 }
 
 /**
- * Parse actions from Ollama LLM response
- *
- * Ollama outputs natural language, not structured JSON, so we regex-match action names.
- *
- * Max 8 actions per turn prevents runaway loops (same limit as Bedrock orchestration).
- * Action parsing is permissive - invalid names are silently ignored.
- *
- * Example response:
- *   "I'll start by moving north. move_north experimentId=123
- *    Then I'll check what I can see. recall_all experimentId=123"
- *
- * Parsed result: ['move_north', 'recall_all']
- */
-function parseActions(response) {
-  const actions = [];
-  const actionRegex = /(?:move_north|move_south|move_east|move_west|recall_all)/gi;
-  const matches = response.match(actionRegex);
-
-  if (matches) {
-    for (const match of matches.slice(0, 8)) { // Max 8 actions per turn
-      actions.push(match.toLowerCase());
-    }
-  }
-
-  return actions;
-}
-
-/**
  * Execute action via Lambda invocation
  *
  * Ollama doesn't have native action tools like Bedrock Agents, so we:
- * 1. Parse action names from LLM response
- * 2. Invoke action_router Lambda for each action (sequential execution)
- * 3. Update position after each action
+ * 1. Receive structured tool calls from Ollama (function name + arguments)
+ * 2. Invoke action_router Lambda for each tool call
+ * 3. Return result with vision data
  *
  * IMPORTANT: Must format request in Bedrock Agent format even though router is called directly.
  * This ensures router.js can parse properties array without modification.
@@ -140,11 +126,8 @@ function parseActions(response) {
  *     {name: 'experimentId', type: 'integer', value: 123},
  *     {name: 'turnNumber', type: 'integer', value: 1}
  *   ]
- *
- * This is the SAME format that Bedrock Agent sends, ensuring router.js works identically
- * for both Bedrock and Ollama paths.
  */
-async function executeAction(action, experimentId, currentX, currentY, turnNumber, stepNumber) {
+async function executeAction(action, args, experimentId, turnNumber, stepNumber) {
   const command = new InvokeCommand({
     FunctionName: process.env.ACTION_ROUTER_FUNCTION_NAME,
     Payload: JSON.stringify({
@@ -156,8 +139,7 @@ async function executeAction(action, experimentId, currentX, currentY, turnNumbe
           'application/json': {
             properties: [
               { name: 'experimentId', type: 'integer', value: experimentId },
-              { name: 'currentX', type: 'integer', value: currentX },
-              { name: 'currentY', type: 'integer', value: currentY },
+              { name: 'reasoning', type: 'string', value: args.reasoning || '' },
               { name: 'turnNumber', type: 'integer', value: turnNumber },
               { name: 'stepNumber', type: 'integer', value: stepNumber }
             ]
@@ -201,11 +183,8 @@ exports.handler = async (event) => {
     // Get the prompt text for this version
     const promptText = await getPrompt(promptVersion);
 
-    // Construct the input for this iteration
-    // Critical: We must explicitly tell the agent its current position
-    // The agent has no memory of position across orchestration loop iterations
-    // This matches the AWS Bedrock format from invoke-agent.js lines 87-95
-    const input = `You are continuing a grid exploration experiment.
+    // Construct the initial system message
+    const systemMessage = `You are continuing a grid exploration experiment.
 
 Experiment ID: ${experimentId}
 Your Current Position: (${currentX}, ${currentY})
@@ -213,82 +192,129 @@ Goal: ${goalDescription}
 
 ${promptText}
 
-When you call any action, always include experimentId=${experimentId} in your request.`;
+Use the provided tools to navigate and explore. You will receive vision feedback after each move showing what you can see from your new position.`;
 
-    console.log('Invoking Ollama with input:', input);
-    console.log(`Turn number: ${turnNumber}`);
-
-    // Get Ollama endpoint and API key from Parameter Store
+    // Get Ollama endpoint and API key
     const endpoint = await getOllamaEndpoint();
     const apiKey = await getOllamaApiKey();
     console.log(`Ollama endpoint: ${endpoint}`);
 
-    // Call Ollama
-    const startTime = Date.now();
-    console.log(`[TIMING] Starting Ollama invocation at ${new Date().toISOString()}`);
+    // Get tools from shared definitions (same as Bedrock Agent)
+    const tools = getOllamaTools();
+    console.log(`Loaded ${tools.length} tools from shared definitions`);
 
-    const llmResponse = await callOllama(endpoint, modelName, input, apiKey);
+    // Initialize conversation with system message
+    const messages = [
+      {
+        role: 'user',
+        content: systemMessage
+      }
+    ];
 
-    console.log(`[TIMING] Ollama call completed in ${Date.now() - startTime}ms`);
-    console.log('Ollama response:', llmResponse.response);
-    console.log(`Token usage: ${llmResponse.prompt_eval_count || 0} input, ${llmResponse.eval_count || 0} output`);
-
-    // Parse actions from response
-    const actions = parseActions(llmResponse.response);
-    console.log(`\nParsed actions: [${actions.join(', ')}]`);
-
-    if (actions.length === 0) {
-      console.log('No valid actions found, ending turn');
-      return {
-        experimentId,
-        agentResponse: llmResponse.response,
-        inputTokens: llmResponse.prompt_eval_count || 0,
-        outputTokens: llmResponse.eval_count || 0,
-        cost: 0 // Local = free!
-      };
-    }
-
-    // Execute each action
-    console.log('\nExecuting actions:');
-    let position = { x: currentX, y: currentY };
+    let actionCount = 0;
+    const maxActions = 8;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
     let goalFound = false;
 
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
-      console.log(`  [${i + 1}/${actions.length}] Executing: ${action}`);
+    console.log(`\n[TURN ${turnNumber}] Starting Ollama orchestration loop (max ${maxActions} actions)`);
 
-      const result = await executeAction(
-        action,
-        experimentId,
-        position.x,
-        position.y,
-        turnNumber,
-        i + 1
-      );
+    // Orchestration loop - mirrors Bedrock Agent's behavior
+    // Continue calling Ollama until it stops requesting tools or max actions reached
+    while (actionCount < maxActions) {
+      console.log(`\n[ACTION ${actionCount + 1}/${maxActions}] Calling Ollama...`);
+      const startTime = Date.now();
 
-      console.log(`    Result: ${result.success ? '✅' : '❌'} ${result.result || result.message || 'Unknown'}`);
+      // Call Ollama with conversation history and available tools
+      const response = await callOllamaChat(endpoint, modelName, messages, apiKey, tools);
 
-      // Update position if move succeeded
-      if (result.success && result.newX !== undefined && result.newY !== undefined) {
-        position.x = result.newX;
-        position.y = result.newY;
-      }
+      const elapsed = Date.now() - startTime;
+      console.log(`[TIMING] Ollama call completed in ${elapsed}ms`);
 
-      // Check if goal found
-      if (result.goalFound) {
-        goalFound = true;
-        console.log('    🎯 GOAL FOUND!');
+      // Track token usage
+      totalInputTokens += response.prompt_eval_count || 0;
+      totalOutputTokens += response.eval_count || 0;
+      console.log(`Token usage: ${response.prompt_eval_count || 0} in, ${response.eval_count || 0} out`);
+
+      // Add assistant's message to conversation history
+      const assistantMessage = response.message;
+      messages.push(assistantMessage);
+
+      // Check if Ollama wants to call any tools
+      if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
+        console.log('No tool calls requested - ending turn');
+        console.log('Assistant response:', assistantMessage.content);
         break;
       }
+
+      console.log(`Ollama requested ${assistantMessage.tool_calls.length} tool call(s)`);
+
+      // Execute each tool call
+      for (const toolCall of assistantMessage.tool_calls) {
+        if (actionCount >= maxActions) {
+          console.log(`Reached max actions (${maxActions}), stopping`);
+          break;
+        }
+
+        actionCount++;
+        const toolName = toolCall.function.name;
+        // Ollama may return arguments as object or string, handle both
+        const toolArgs = typeof toolCall.function.arguments === 'string'
+          ? JSON.parse(toolCall.function.arguments)
+          : toolCall.function.arguments;
+
+        console.log(`  [${actionCount}] Executing: ${toolName}(${JSON.stringify(toolArgs)})`);
+
+        // Execute the action
+        const result = await executeAction(
+          toolName,
+          toolArgs,
+          experimentId,
+          turnNumber,
+          actionCount
+        );
+
+        console.log(`    Result: ${result.success ? '✅' : '❌'} ${result.message || 'Unknown'}`);
+        if (result.visible) {
+          console.log(`    Vision: ${result.visible.substring(0, 100)}...`);
+        }
+
+        // Check if goal found
+        if (result.foundGoal) {
+          goalFound = true;
+          console.log('    🎯 GOAL FOUND!');
+        }
+
+        // Add tool result to conversation
+        // This is critical - Ollama sees the result including vision data
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify(result)
+        });
+
+        // Stop if goal found
+        if (goalFound) {
+          console.log('Goal found, ending turn');
+          break;
+        }
+      }
+
+      // Stop if goal found
+      if (goalFound) {
+        break;
+      }
+
+      // Continue loop - Ollama will see tool results and can decide to call more tools
     }
 
-    console.log(`\nTurn complete. Final position: (${position.x}, ${position.y}), Goal found: ${goalFound}`);
+    console.log(`\n[TURN ${turnNumber}] Complete: ${actionCount} actions executed`);
+    console.log(`Total tokens: ${totalInputTokens} in, ${totalOutputTokens} out`);
 
     return {
       experimentId,
-      agentResponse: llmResponse.response,
-      inputTokens: llmResponse.prompt_eval_count || 0,
-      outputTokens: llmResponse.eval_count || 0,
+      agentResponse: messages[messages.length - 1]?.content || 'Turn complete',
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
       cost: 0 // Local = free!
     };
 

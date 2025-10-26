@@ -74,7 +74,8 @@ async function getRateLimitRpm(modelName) {
 
   // Map model name to parameter store key
   // Example: "claude-3-5-haiku" maps to "/oriole/models/claude-3-5-haiku/rate-limit-rpm"
-  const modelKey = modelName.toLowerCase().replace(/\./g, '-');
+  // Example: "llama3.2:latest" maps to "/oriole/models/llama3-2-latest/rate-limit-rpm"
+  const modelKey = modelName.toLowerCase().replace(/\./g, '-').replace(/:/g, '-');
 
   try {
     const command = new GetParameterCommand({

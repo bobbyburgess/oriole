@@ -1,0 +1,94 @@
+{
+  "tools": [
+    {
+      "name": "move_north",
+      "description": "Move one tile north (decreasing Y coordinate)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you are making this move"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "move_south",
+      "description": "Move one tile south (increasing Y coordinate)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you are making this move"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "move_east",
+      "description": "Move one tile east (increasing X coordinate)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you are making this move"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "move_west",
+      "description": "Move one tile west (decreasing X coordinate)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you are making this move"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "recall_all",
+      "description": "Recall all tiles you have seen in the experiment so far. Returns a map of visited tiles with their types (empty, wall, or GOAL).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you are recalling memory now"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    }
+  ]
+}
