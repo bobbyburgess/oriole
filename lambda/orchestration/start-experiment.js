@@ -143,21 +143,29 @@ exports.handler = async (event) => {
       const [numCtx, temperature, numPredict, repeatPenalty, recallInterval, maxRecallActions, maxMoves, maxDurationMinutes] =
         await Promise.all([
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/ollama/num-ctx:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/temperature' }))
-            .then(r => parseFloat(r.Parameter.Value)).catch(() => null),
+            .then(r => parseFloat(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/ollama/temperature:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-predict' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/ollama/num-predict:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/repeat-penalty' }))
-            .then(r => parseFloat(r.Parameter.Value)).catch(() => null),
+            .then(r => parseFloat(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/ollama/repeat-penalty:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/experiments/recall-interval:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/experiments/max-recall-actions:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/max-moves:', err.message); return null; }),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
-            .then(r => parseInt(r.Parameter.Value)).catch(() => null)
+            .then(r => parseInt(r.Parameter.Value))
+            .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; })
         ]);
 
       modelConfig = {
