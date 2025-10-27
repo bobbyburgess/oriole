@@ -24,6 +24,11 @@ SELECT
     NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
     1
   ) as avg_per_turn,
+  ROUND(
+    (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
+    NULLIF(EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) / 60.0, 0),
+    1
+  ) as moves_per_min,
   CASE
     WHEN goal_found THEN '🎯 GOAL!'
     WHEN completed_at IS NOT NULL AND failure_reason IS NOT NULL THEN '❌ ' || (failure_reason::json->>'errorType')
@@ -31,9 +36,20 @@ SELECT
     ELSE '▶ Running (' || ROUND(EXTRACT(EPOCH FROM (NOW() - started_at))/60) || 'm)'
   END as status,
   CASE
-    WHEN completed_at IS NOT NULL
-    THEN ROUND(EXTRACT(EPOCH FROM (completed_at - started_at))) || 's'
-    ELSE ROUND(EXTRACT(EPOCH FROM (NOW() - started_at))) || 's'
+    WHEN EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) >= 86400 THEN
+      (EXTRACT(days FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'd ' ||
+      (EXTRACT(hours FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'h ' ||
+      (EXTRACT(minutes FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'm ' ||
+      (EXTRACT(seconds FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 's'
+    WHEN EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) >= 3600 THEN
+      (EXTRACT(hours FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'h ' ||
+      (EXTRACT(minutes FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'm ' ||
+      (EXTRACT(seconds FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 's'
+    WHEN EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) >= 60 THEN
+      (EXTRACT(minutes FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'm ' ||
+      (EXTRACT(seconds FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 's'
+    ELSE
+      (EXTRACT(seconds FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 's'
   END as duration
 FROM experiments
 WHERE id >= $FIRST_EXPERIMENT_ID
