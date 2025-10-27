@@ -14,7 +14,9 @@
     "synth": "cdk synth",
     "deploy": "cdk deploy",
     "diff": "cdk diff",
-    "destroy": "cdk destroy"
+    "destroy": "cdk destroy",
+    "clean": "rm -rf cdk.out node_modules/.cache",
+    "clean:all": "rm -rf cdk.out node_modules/.cache node_modules"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.220.0",
