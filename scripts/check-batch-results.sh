@@ -24,6 +24,9 @@ SELECT
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true) as moves,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,
+  -- Token usage
+  COALESCE(TO_CHAR((SELECT SUM(input_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_in,
+  COALESCE(TO_CHAR((SELECT SUM(output_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_out,
   ROUND(
     (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
     NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
