@@ -253,28 +253,29 @@ function getViewerHTML(colors) {
       z-index: 1000;
       border: 1px solid #555;
     }
-    #info {
+    #controls {
       position: fixed;
       top: 0;
       left: 730px;
       width: 720px;
-      height: 720px;
+      height: 250px;
+      padding: 20px;
+      background: rgba(42, 42, 42, 0.95);
+      font-family: 'Consolas', 'Monaco', monospace;
+      overflow: hidden;
+    }
+    #info {
+      position: fixed;
+      top: 250px;
+      left: 730px;
+      width: 720px;
+      height: 470px;
       padding: 20px;
       background: rgba(42, 42, 42, 0.95);
       font-family: 'Consolas', 'Monaco', monospace;
       font-size: 14px;
       line-height: 1.6;
       overflow-y: auto;
-    }
-    #controls {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 20px;
-      background: rgba(42, 42, 42, 0.95);
-      border-radius: 8px;
-      min-width: 350px;
-      z-index: 100;
     }
     #user-info {
       margin-top: 15px;
@@ -421,22 +422,81 @@ function getViewerHTML(colors) {
   </div>
 
   <script>
-    // Color configuration from Parameter Store
+    /**
+     * GRID EXPLORATION VIEWER - Frontend Application
+     *
+     * This application visualizes AI agent experiments navigating 60x60 grids.
+     * It provides playback controls to step through each action the agent took,
+     * showing what the agent could see and the reasoning behind each move.
+     *
+     * Architecture:
+     * - Authentication: AWS Cognito User Pools (user/password auth)
+     * - Data API: Authenticated API Gateway endpoints return experiment data
+     * - Rendering: HTML5 Canvas for grid visualization
+     * - State: All experiment state stored in global variables (experimentData, currentStep)
+     */
+
+    /**
+     * COLOR CONFIGURATION
+     * Colors fetched from AWS Parameter Store on page load.
+     * Can be changed at runtime via Parameter Store without redeploying code.
+     *
+     * Available colors:
+     * - background: Canvas background and empty cells
+     * - wall: Wall cells (value = 1 in grid_data)
+     * - goal: Goal position(s) the agent must reach
+     * - agent: Current agent position
+     * - seen: Transparent overlay for tiles the agent has observed
+     */
     const COLORS = ${JSON.stringify(colors)};
 
-    // Cognito configuration
+    /**
+     * COGNITO AUTHENTICATION CONFIGURATION
+     * UserPoolId and ClientId are public client credentials.
+     * These are safe to expose in frontend code - they identify the user pool
+     * but don't grant any access without valid username/password.
+     */
     const poolData = {
       UserPoolId: 'us-west-2_YyOSMp5U9',
       ClientId: '7o8esskkibq38qsf6nhisbm51b'
     };
     const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+
+    /**
+     * APPLICATION STATE
+     * Global variables storing current application state.
+     *
+     * jwtToken: JWT ID token from Cognito, sent as Authorization header to API
+     * experimentData: Full experiment object including maze, actions, metadata
+     * currentStep: Current playback position (0-indexed into actions array)
+     * autoplayInterval: Interval ID for automatic playback, null when stopped
+     */
     let jwtToken = null;
     let experimentData = null;
     let currentStep = 0;
     let autoplayInterval = null;
-    const CELL_SIZE = 12;  // 12px per cell = 720x720 for 60x60 grid
 
-    // Check if already logged in
+    /**
+     * GRID RENDERING CONFIGURATION
+     * CELL_SIZE determines the pixel size of each grid cell.
+     * For 60x60 grid: 12px * 60 = 720px canvas size
+     */
+    const CELL_SIZE = 12;
+
+    /**
+     * EVENT HANDLER REFERENCES
+     * Store references to canvas event handlers so they can be removed
+     * when user logs out/logs in again, preventing memory leaks.
+     */
+    let canvasMouseMoveHandler = null;
+    let canvasMouseLeaveHandler = null;
+
+    /**
+     * INITIALIZE APPLICATION ON PAGE LOAD
+     * Check if user is already authenticated (session cookie exists).
+     * If valid session found, skip login form and go directly to viewer.
+     * This enables persistent login across page refreshes.
+     */
     window.onload = function() {
       const cognitoUser = userPool.getCurrentUser();
       if (cognitoUser) {
@@ -449,6 +509,18 @@ function getViewerHTML(colors) {
       }
     };
 
+    /**
+     * AUTHENTICATE USER WITH COGNITO
+     * Validates username/password against Cognito User Pool.
+     *
+     * On success:
+     * - Stores JWT token for API authentication
+     * - Shows viewer UI with username displayed
+     *
+     * On failure:
+     * - Displays error message below login form
+     * - Common errors: incorrect password, user not found, user not confirmed
+     */
     function login() {
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
@@ -477,6 +549,14 @@ function getViewerHTML(colors) {
       });
     }
 
+    /**
+     * LOG OUT CURRENT USER
+     * Signs out from Cognito and clears local session state.
+     * Returns user to login form.
+     *
+     * Note: This does not clear experimentData or currentStep.
+     * If user logs back in, previous experiment may still be loaded.
+     */
     function logout() {
       const cognitoUser = userPool.getCurrentUser();
       if (cognitoUser) {
@@ -487,46 +567,97 @@ function getViewerHTML(colors) {
       document.getElementById('viewer-content').style.display = 'none';
     }
 
+    /**
+     * SHOW VIEWER INTERFACE
+     * Switches from login form to main viewer UI.
+     * Sets up canvas and loads list of available experiments.
+     *
+     * This function is called either after successful login or when
+     * existing valid session is found on page load.
+     *
+     * @param {string} username - Username to display in UI
+     */
     async function showViewer(username) {
       document.getElementById('login-form').style.display = 'none';
       document.getElementById('viewer-content').style.display = 'block';
       document.getElementById('user-info').innerHTML = \`\${username} (<a onclick="logout()">logout</a>)\`;
 
-      // Set initial canvas size (for 60x60 grid)
+      // Set canvas dimensions based on grid size
+      // 60x60 grid * 12px per cell = 720x720px canvas
       const canvas = document.getElementById('mazeCanvas');
       canvas.width = 60 * CELL_SIZE;
       canvas.height = 60 * CELL_SIZE;
 
-      // Add tooltip functionality for canvas
+      /**
+       * CANVAS TOOLTIP SETUP
+       * Shows (x, y) coordinates when hovering over grid cells.
+       * Event handlers are stored in global variables so they can be removed
+       * if user logs out and logs back in, preventing multiple handlers
+       * from being attached to the same canvas.
+       */
       const tooltip = document.getElementById('canvas-tooltip');
-      canvas.addEventListener('mousemove', (event) => {
+
+      if (canvasMouseMoveHandler) {
+        canvas.removeEventListener('mousemove', canvasMouseMoveHandler);
+      }
+      if (canvasMouseLeaveHandler) {
+        canvas.removeEventListener('mouseleave', canvasMouseLeaveHandler);
+      }
+
+      // Remove old listeners to prevent duplicate handlers
+      canvasMouseMoveHandler = (event) => {
         const rect = canvas.getBoundingClientRect();
         const mouseX = event.clientX - rect.left;
         const mouseY = event.clientY - rect.top;
 
-        // Calculate grid coordinates
+        // Convert pixel coordinates to grid cell coordinates
+        // Math.floor handles fractional positions (e.g., 12.7px -> cell 1)
         const gridX = Math.floor(mouseX / CELL_SIZE);
         const gridY = Math.floor(mouseY / CELL_SIZE);
 
-        // Check if within grid bounds
+        // Only show tooltip when mouse is over a valid grid cell
+        // This prevents tooltip from showing when mouse is outside canvas bounds
         if (gridX >= 0 && gridX < 60 && gridY >= 0 && gridY < 60) {
           tooltip.textContent = \`(\${gridX}, \${gridY})\`;
+          // Offset tooltip 15px from cursor to avoid obscuring the cell
           tooltip.style.left = (event.clientX + 15) + 'px';
           tooltip.style.top = (event.clientY + 15) + 'px';
           tooltip.style.display = 'block';
         } else {
           tooltip.style.display = 'none';
         }
-      });
+      };
 
-      canvas.addEventListener('mouseleave', () => {
+      canvasMouseLeaveHandler = () => {
         tooltip.style.display = 'none';
-      });
+      };
 
-      // Load experiments list
+      // Attach event listeners to canvas
+      canvas.addEventListener('mousemove', canvasMouseMoveHandler);
+      canvas.addEventListener('mouseleave', canvasMouseLeaveHandler);
+
+      // Fetch and populate dropdown with available experiments
       await loadExperimentsList();
     }
 
+    /**
+     * LOAD EXPERIMENTS LIST
+     * Fetches all completed experiments from API and populates dropdown.
+     *
+     * The API returns experiments in descending order by ID (most recent first).
+     * Each experiment is displayed with:
+     * - ID number
+     * - Model name (e.g., "claude-3.5-haiku", "nova-lite")
+     * - Outcome indicator:
+     *   ✓ = Successfully found goal
+     *   ✗ = Completed but didn't find goal
+     *   ⚠ ErrorType = Failed due to error (e.g., ThrottlingException)
+     *
+     * The dropdown is color-coded:
+     * - Green text for successful experiments
+     * - Red text for failures
+     * - Orange text for errors/throttling
+     */
     async function loadExperimentsList() {
       try {
         const response = await fetch('/experiments', {
@@ -577,11 +708,57 @@ function getViewerHTML(colors) {
       }
     }
 
+    /**
+     * LOAD EXPERIMENT DATA
+     * Fetches full experiment details when user selects from dropdown.
+     * Called automatically via onchange handler on dropdown element.
+     *
+     * The API returns a complete experiment object containing:
+     * - experiment: Metadata (model, prompt version, timestamps, costs)
+     * - maze: Grid structure (width, height, grid_data, goal position)
+     * - actions: Array of all agent actions in chronological order
+     *
+     * Each action includes:
+     * - step_number: Sequential step ID
+     * - action_type: e.g., "move_north", "recall_all", "observe"
+     * - from_x, from_y: Starting position
+     * - to_x, to_y: Ending position (null if action didn't involve movement)
+     * - success: Whether action succeeded (false if hit wall)
+     * - tiles_seen: Object mapping "x,y" coordinates to cell values
+     * - reasoning: Agent's explanation for why it took this action
+     * - input_tokens, output_tokens: Token usage for this step
+     * - cost_usd: Cost of this API call
+     *
+     * After loading, resets playback to step 0 and renders first frame.
+     */
     async function loadExperiment() {
       try {
         const experimentId = document.getElementById('experimentDropdown').value;
 
+        // Validate experiment ID is present
         if (!experimentId) {
+          return;
+        }
+
+        /**
+         * SECURITY: Validate experiment ID format
+         * Ensures ID is a positive integer to prevent injection attacks.
+         * Checks that parsed value matches original string to catch edge cases like:
+         * - "123abc" (parseInt would return 123)
+         * - " 123 " (with whitespace)
+         * - "0" or negative numbers
+         */
+        const parsedId = parseInt(experimentId, 10);
+        if (isNaN(parsedId) || parsedId <= 0 || parsedId.toString() !== experimentId.trim()) {
+          console.error('Invalid experiment ID:', experimentId);
+
+          const errorSpan = document.createElement('span');
+          errorSpan.className = 'error';
+          errorSpan.textContent = 'Invalid experiment ID. Please select a valid experiment.';
+
+          const infoDiv = document.getElementById('experimentInfo');
+          infoDiv.innerHTML = '';
+          infoDiv.appendChild(errorSpan);
           return;
         }
 
@@ -596,7 +773,15 @@ function getViewerHTML(colors) {
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API error:', response.status, errorText);
-          document.getElementById('experimentInfo').innerHTML = \`<span class="error">Error loading experiment: \${response.status} - \${errorText}</span>\`;
+
+          // Safely create error element to prevent XSS
+          const errorSpan = document.createElement('span');
+          errorSpan.className = 'error';
+          errorSpan.textContent = \`Error loading experiment: \${response.status} - \${errorText}\`;
+
+          const infoDiv = document.getElementById('experimentInfo');
+          infoDiv.innerHTML = '';
+          infoDiv.appendChild(errorSpan);
           return;
         }
 
@@ -612,16 +797,29 @@ function getViewerHTML(colors) {
         render();
       } catch (error) {
         console.error('Error loading experiment:', error);
-        document.getElementById('experimentInfo').innerHTML = \`<span class="error">Error: \${error.message}</span>\`;
+
+        // Safely create error element to prevent XSS
+        const errorSpan = document.createElement('span');
+        errorSpan.className = 'error';
+        errorSpan.textContent = \`Error: \${error.message}\`;
+
+        const infoDiv = document.getElementById('experimentInfo');
+        infoDiv.innerHTML = '';
+        infoDiv.appendChild(errorSpan);
       }
     }
 
+    /**
+     * RESTART PLAYBACK
+     * Resets playback to the first action (step 0).
+     * Stops autoplay if currently running.
+     */
     function restart() {
       if (!experimentData) return;
 
       currentStep = 0;
 
-      // Stop autoplay if running
+      // Stop autoplay if running to prevent unexpected behavior
       if (autoplayInterval) {
         toggleAutoplay();
       }
@@ -629,35 +827,66 @@ function getViewerHTML(colors) {
       render();
     }
 
+    /**
+     * RENDER CANVAS
+     * Draws the current state of the grid exploration experiment.
+     *
+     * Rendering happens in layers (bottom to top):
+     * 1. Grid structure (walls, empty cells, goal)
+     * 2. Seen tiles (transparent overlay showing agent's observations)
+     * 3. Path history (optional: all positions agent has visited)
+     * 4. Agent position (highlighted square at current location)
+     *
+     * This function is called:
+     * - When experiment is first loaded
+     * - When user steps forward/backward through playback
+     * - When autoplay advances to next step
+     * - When path history checkbox is toggled
+     *
+     * Performance note: Currently redraws entire grid every call.
+     * For a 60x60 grid, this is 3,600 cell renders per step.
+     * Could be optimized to only redraw changed regions.
+     */
     function render() {
       if (!experimentData) return;
 
       const canvas = document.getElementById('mazeCanvas');
       const ctx = canvas.getContext('2d');
       const maze = experimentData.maze;
-      const grid = maze.grid_data;
+      const grid = maze.grid_data;  // 2D array: grid[y][x] where 0=empty, 1=wall
 
-      // Set canvas size
+      // Dynamically size canvas based on maze dimensions
+      // Supports variable-sized mazes (not just 60x60)
       canvas.width = maze.width * CELL_SIZE;
       canvas.height = maze.height * CELL_SIZE;
 
-      // Clear canvas
+      // Clear entire canvas with background color
       ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Draw grid
+      /**
+       * LAYER 1: GRID STRUCTURE
+       * Draw the static maze layout.
+       *
+       * grid_data is a 2D array where grid[y][x] contains:
+       * - 0: Empty/walkable cell
+       * - 1: Wall (impassable)
+       *
+       * Goal position is stored separately in maze.goal_x, maze.goal_y
+       * (not encoded in the grid_data array)
+       */
       for (let y = 0; y < grid.length; y++) {
         for (let x = 0; x < grid[y].length; x++) {
           const cell = grid[y][x];
 
-          if (cell === 1) {
-            // Wall
-            ctx.fillStyle = COLORS.wall;
-          } else if (cell === 2) {
-            // Goal
+          if (x === maze.goal_x && y === maze.goal_y) {
+            // Goal cell: Where agent needs to reach
             ctx.fillStyle = COLORS.goal;
+          } else if (cell === 1) {
+            // Wall cell: Impassable obstacle
+            ctx.fillStyle = COLORS.wall;
           } else {
-            // Empty
+            // Empty cell: Walkable space
             ctx.fillStyle = COLORS.background;
           }
 
@@ -665,11 +894,18 @@ function getViewerHTML(colors) {
         }
       }
 
-      // Draw seen tiles
+      /**
+       * LAYER 2: SEEN TILES
+       * Show which cells the agent can observe at current step.
+       *
+       * tiles_seen is an object mapping "x,y" coordinate strings to cell values.
+       * The transparent overlay shows the agent's current "field of view."
+       * This changes at each step as the agent moves and observes new areas.
+       */
       if (currentStep < experimentData.actions.length) {
         const action = experimentData.actions[currentStep];
         if (action.tiles_seen) {
-          ctx.fillStyle = COLORS.seen;
+          ctx.fillStyle = COLORS.seen;  // Semi-transparent blue overlay
           for (const coord in action.tiles_seen) {
             const [x, y] = coord.split(',').map(Number);
             ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
@@ -677,25 +913,35 @@ function getViewerHTML(colors) {
         }
       }
 
-      // Draw path history if enabled
+      /**
+       * LAYER 3: PATH HISTORY (OPTIONAL)
+       * Shows all cells the agent has visited up to current step.
+       *
+       * Uses a Set to track unique positions, preventing duplicate rendering
+       * if agent visits same cell multiple times.
+       *
+       * Excludes current position (drawn as agent marker in next layer).
+       */
       const showPath = document.getElementById('showPath')?.checked;
       if (showPath && currentStep >= 0) {
         const visitedPositions = new Set();
 
-        // Collect all positions the agent has been to up to current step
+        // Build set of all visited positions from step 0 to currentStep
         for (let i = 0; i <= currentStep; i++) {
           const act = experimentData.actions[i];
-          // Add the "to" position if it exists, otherwise the "from" position
+
+          // Use "to" position if move succeeded, otherwise "from" position
+          // (failed moves don't change agent position)
           const posX = act.to_x !== null ? act.to_x : act.from_x;
           const posY = act.to_y !== null ? act.to_y : act.from_y;
 
-          // Don't add current position (we'll draw the agent there)
+          // Exclude current position (i === currentStep) to avoid overlapping with agent marker
           if (i < currentStep) {
             visitedPositions.add(\`\${posX},\${posY}\`);
           }
         }
 
-        // Draw path history in a subtle color
+        // Draw path with subtle brown/tan overlay
         ctx.fillStyle = 'rgba(200, 150, 100, 0.3)';
         for (const pos of visitedPositions) {
           const [x, y] = pos.split(',').map(Number);
@@ -803,6 +1049,15 @@ function getViewerHTML(colors) {
       document.getElementById('stepInfo').textContent = experimentData ? \`Step \${currentStep + 1} / \${experimentData.actions.length}\` : 'No experiment loaded';
     }
 
+    /**
+     * STEP FORWARD
+     * Advances playback by one action.
+     * If already at last action, does nothing.
+     *
+     * Called by:
+     * - Autoplay interval timer
+     * - Could be called by keyboard navigation (not currently implemented)
+     */
     function stepForward() {
       if (experimentData && currentStep < experimentData.actions.length - 1) {
         currentStep++;
@@ -810,15 +1065,36 @@ function getViewerHTML(colors) {
       }
     }
 
+    /**
+     * TOGGLE AUTOPLAY
+     * Starts or stops automatic advancement through actions.
+     *
+     * When starting autoplay:
+     * - Reads speed from speedDial input (milliseconds per step)
+     * - Creates interval that calls stepForward() repeatedly
+     * - Updates button text to "⏸ Pause"
+     * - Auto-stops when reaching final action
+     *
+     * When stopping autoplay:
+     * - Clears interval timer
+     * - Updates button text to "▶ Play"
+     * - Preserves current position (does not reset to step 0)
+     *
+     * Speed dial range: 100ms (very fast) to 5000ms (slow)
+     * Default: 500ms per step if speedDial value is invalid
+     */
     function toggleAutoplay() {
       if (autoplayInterval) {
+        // Stop autoplay
         clearInterval(autoplayInterval);
         autoplayInterval = null;
         document.getElementById('playBtn').textContent = '▶ Play';
       } else {
+        // Start autoplay
         const speed = parseInt(document.getElementById('speedDial').value) || 500;
         autoplayInterval = setInterval(() => {
           stepForward();
+          // Auto-stop when reaching end of actions
           if (currentStep === experimentData.actions.length - 1) {
             toggleAutoplay();
           }

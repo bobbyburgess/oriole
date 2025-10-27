@@ -4,10 +4,11 @@
 // 1. Count total actions taken so far (from agent_actions table)
 // 2. Check if experiment should continue based on:
 //    - Goal found (success flag set)
-//    - Max moves reached
-//    - Max duration exceeded
+//    - Max moves reached (from /oriole/max-moves)
+//    - Max duration exceeded (from /oriole/max-duration-minutes)
 // 3. Fetch current position from DB (critical for stateless orchestration)
 // 4. Pass all state forward to next step (invoke-agent or finalize)
+// Force IAM policy refresh
 
 const { Client } = require('pg');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
@@ -43,7 +44,7 @@ async function getMaxMoves() {
   }
 
   const command = new GetParameterCommand({
-    Name: '/oriole/experiments/max-moves',
+    Name: '/oriole/max-moves',
     WithDecryption: false
   });
 
@@ -58,7 +59,7 @@ async function getMaxDurationMinutes() {
   }
 
   const command = new GetParameterCommand({
-    Name: '/oriole/experiments/max-duration-minutes',
+    Name: '/oriole/max-duration-minutes',
     WithDecryption: false
   });
 

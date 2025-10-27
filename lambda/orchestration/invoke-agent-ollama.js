@@ -238,6 +238,14 @@ Use the provided tools to navigate and explore. You will receive vision feedback
 
       // Add assistant's message to conversation history
       const assistantMessage = response.message;
+
+      // Check if response is valid
+      if (!assistantMessage) {
+        console.error('Invalid response from Ollama - no message field');
+        console.error('Full response:', JSON.stringify(response, null, 2));
+        throw new Error(`Ollama returned invalid response for model ${modelName} - no message field. This model may not support function calling.`);
+      }
+
       messages.push(assistantMessage);
 
       // Check if Ollama wants to call any tools

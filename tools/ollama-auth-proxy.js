@@ -17,12 +17,23 @@ const express = require('express');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
 
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
 const PORT = parseInt(process.env.OLLAMA_PORT || '11435');
 const OLLAMA_TARGET = process.env.OLLAMA_TARGET || 'http://localhost:11434';
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
+
+// Set up logging to file
+const LOG_FILE = path.join(__dirname, 'ollama-proxy.log');
+const logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+
+function log(message) {
+  const logLine = `${message}\n`;
+  console.log(message);  // Still log to console
+  logStream.write(logLine);  // Also write to file
+}
 
 if (!OLLAMA_API_KEY) {
   console.error('ERROR: OLLAMA_API_KEY environment variable is required');
@@ -58,7 +69,12 @@ function checkApiKey(req, res, next) {
 app.use(checkApiKey, (req, res) => {
   const targetUrl = new URL(req.url, OLLAMA_TARGET);
 
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} -> ${targetUrl.href}`);
+  // Get client IP (handle proxies with X-Forwarded-For)
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+                   req.connection.remoteAddress ||
+                   req.socket.remoteAddress;
+
+  log(`[${new Date().toISOString()}] ${clientIp} - ${req.method} ${req.url} -> ${targetUrl.href}`);
 
   const options = {
     hostname: targetUrl.hostname,
@@ -109,16 +125,18 @@ if (SSL_KEY_PATH && SSL_CERT_PATH) {
   };
 
   https.createServer(httpsOptions, app).listen(PORT, '0.0.0.0', () => {
-    console.log(`🔒 Ollama auth proxy (HTTPS) listening on 0.0.0.0:${PORT}`);
-    console.log(`Proxying to: ${OLLAMA_TARGET}`);
-    console.log(`API key configured: ${OLLAMA_API_KEY.substring(0, 8)}...`);
-    console.log(`SSL cert: ${SSL_CERT_PATH}`);
+    log(`🔒 Ollama auth proxy (HTTPS) listening on 0.0.0.0:${PORT}`);
+    log(`Proxying to: ${OLLAMA_TARGET}`);
+    log(`API key configured: ${OLLAMA_API_KEY.substring(0, 8)}...`);
+    log(`SSL cert: ${SSL_CERT_PATH}`);
+    log(`Logging to: ${LOG_FILE}`);
   });
 } else {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`⚠️  Ollama auth proxy (HTTP) listening on 0.0.0.0:${PORT}`);
-    console.log(`Proxying to: ${OLLAMA_TARGET}`);
-    console.log(`API key configured: ${OLLAMA_API_KEY.substring(0, 8)}...`);
-    console.log(`WARNING: Running without SSL - use SSL_KEY_PATH and SSL_CERT_PATH for HTTPS`);
+    log(`⚠️  Ollama auth proxy (HTTP) listening on 0.0.0.0:${PORT}`);
+    log(`Proxying to: ${OLLAMA_TARGET}`);
+    log(`API key configured: ${OLLAMA_API_KEY.substring(0, 8)}...`);
+    log(`WARNING: Running without SSL - use SSL_KEY_PATH and SSL_CERT_PATH for HTTPS`);
+    log(`Logging to: ${LOG_FILE}`);
   });
 }
