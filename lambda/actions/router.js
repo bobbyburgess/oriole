@@ -65,7 +65,7 @@
  */
 
 const { handleMove } = require('./move_handler');
-const recallAll = require('./recall_all');
+const recall = require('./recall');
 const { acquireExperimentLock, releaseExperimentLock } = require('../shared/db');
 
 exports.handler = async (event) => {
@@ -123,8 +123,20 @@ exports.handler = async (event) => {
         result = await handleMove('west', { experimentId, reasoning, turnNumber });
         break;
 
-      case '/recall_all':
-        result = await recallAll.handler({ experimentId, reasoning, turnNumber });
+      case '/recall_last_25':
+        result = await recall.handler({ experimentId, reasoning, turnNumber }, 25);
+        break;
+
+      case '/recall_last_50':
+        result = await recall.handler({ experimentId, reasoning, turnNumber }, 50);
+        break;
+
+      case '/recall_last_100':
+        result = await recall.handler({ experimentId, reasoning, turnNumber }, 100);
+        break;
+
+      case '/recall_last_200':
+        result = await recall.handler({ experimentId, reasoning, turnNumber }, 200);
         break;
 
       default:

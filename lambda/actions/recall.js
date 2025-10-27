@@ -1,13 +1,13 @@
-// recall_all action - Returns agent's spatial memory (all tiles seen across all actions)
+// recall action - Returns agent's spatial memory with explicit depth limits
 //
-// Purpose: Allows agents to "remember" what they've explored without re-visiting
+// Four variants available (called via router):
+// - recall_last_25: Returns tiles from last 25 actions
+// - recall_last_50: Returns tiles from last 50 actions
+// - recall_last_100: Returns tiles from last 100 actions
+// - recall_last_200: Returns tiles from last 200 actions
+//
+// Purpose: Allows agents to strategically manage memory/context tradeoff
 // Cooldown: Configurable minimum number of moves between recalls (prevents analysis paralysis)
-//
-// How it works:
-// 1. Check if agent has made enough movement actions since last recall
-// 2. If cooldown active, reject with error message
-// 3. Otherwise, aggregate all tiles_seen from agent_actions table
-// 4. Return formatted memory with tile types and coordinates
 //
 // Configurable via: /oriole/experiments/recall-interval (default: 10 moves)
 
@@ -19,7 +19,6 @@ const ssmClient = new SSMClient();
 
 // Module-level caching for configuration parameters
 let cachedRecallInterval = null;
-let cachedMaxRecallActions = null;
 
 async function getRecallInterval() {
   if (cachedRecallInterval !== null) {
@@ -36,29 +35,12 @@ async function getRecallInterval() {
   return cachedRecallInterval;
 }
 
-async function getMaxRecallActions() {
-  if (cachedMaxRecallActions !== null) {
-    return cachedMaxRecallActions;
-  }
-
-  try {
-    const command = new GetParameterCommand({
-      Name: '/oriole/experiments/max-recall-actions',
-      WithDecryption: false
-    });
-
-    const response = await ssmClient.send(command);
-    cachedMaxRecallActions = parseInt(response.Parameter.Value);
-    return cachedMaxRecallActions;
-  } catch (error) {
-    // If parameter doesn't exist, default to null (unlimited recall)
-    console.warn('No max-recall-actions parameter found, using unlimited recall');
-    cachedMaxRecallActions = null;
-    return null;
-  }
-}
-
-exports.handler = async (event) => {
+/**
+ * Recall handler - accepts explicit limit parameter
+ * @param {Object} event - Contains experimentId, reasoning, turnNumber
+ * @param {number} limit - Number of recent actions to recall (25, 50, 100, or 200)
+ */
+exports.handler = async (event, limit) => {
   try {
     const { experimentId, reasoning, turnNumber } = event;
 
@@ -72,23 +54,23 @@ exports.handler = async (event) => {
     /**
      * Enforce recall cooldown to prevent agents from getting stuck in "thinking loops"
      *
-     * BEHAVIOR PROBLEM: Without cooldown, LLMs tend to repeatedly call recall_all
+     * BEHAVIOR PROBLEM: Without cooldown, LLMs tend to repeatedly call recall
      *                   without exploring, trying to "reason" their way through the maze
-     *                   Example: recall_all -> recall_all -> recall_all (no movement!)
+     *                   Example: recall -> recall -> recall (no movement!)
      *
      * SOLUTION: Force minimum exploration between recalls
      *          Count only MOVEMENT actions (move_*), not other recalls
      *          This ensures agent is actively exploring, not just thinking
      *
-     * Default: 2 movements required between recalls (configurable via Parameter Store)
+     * Default: 10 movements required between recalls (configurable via Parameter Store)
      */
     const recallInterval = await getRecallInterval();
     const dbClient = await db.getDbClient();
 
-    // Find the most recent recall_all action
+    // Find the most recent recall action (any recall_last_* variant)
     const lastRecallResult = await dbClient.query(
       `SELECT step_number FROM agent_actions
-       WHERE experiment_id = $1 AND action_type = 'recall_all'
+       WHERE experiment_id = $1 AND action_type LIKE 'recall_last_%'
        ORDER BY step_number DESC LIMIT 1`,
       [experimentId]
     );
@@ -114,7 +96,7 @@ exports.handler = async (event) => {
         return {
           statusCode: 400,
           body: JSON.stringify({
-            error: `Recall cooldown active. You must make ${recallInterval - movesSinceRecall} more movement actions before calling recall_all again. Use your vision and continue exploring!`,
+            error: `Recall cooldown active. You must make ${recallInterval - movesSinceRecall} more movement actions before calling any recall tool again. Use your vision and continue exploring!`,
             movesSinceLastRecall: movesSinceRecall,
             movesRequired: recallInterval
           })
@@ -123,11 +105,8 @@ exports.handler = async (event) => {
     }
     // First recall is always allowed (no previous recall to check)
 
-    // Get max recall actions limit (for context window management)
-    const maxRecallActions = await getMaxRecallActions();
-
-    // Get tiles the agent has seen (limited to recent actions if configured)
-    const seenTiles = await db.getAllSeenTiles(experimentId, maxRecallActions);
+    // Get tiles the agent has seen (limited to recent N actions based on tool called)
+    const seenTiles = await db.getAllSeenTiles(experimentId, limit);
 
     // Get current position
     const currentPos = await db.getCurrentPosition(experimentId);
@@ -135,11 +114,11 @@ exports.handler = async (event) => {
     // Get next step number
     const stepNumber = await db.getNextStepNumber(experimentId);
 
-    // Log the recall action
+    // Log the recall action with specific tool name
     await db.logAction(
       experimentId,
       stepNumber,
-      'recall_all',
+      `recall_last_${limit}`,
       reasoning || '',
       currentPos.x,
       currentPos.y,
@@ -169,11 +148,8 @@ exports.handler = async (event) => {
       memory.push({ x, y, type: tileType });
     }
 
-    // Build response message with context management info
-    let message = `You have seen ${memory.length} tiles so far. Current position: (${currentPos.x}, ${currentPos.y})`;
-    if (maxRecallActions !== null) {
-      message += ` (showing tiles from last ${maxRecallActions} actions for efficiency)`;
-    }
+    // Build response message with explicit limit information
+    const message = `Memory recall complete. You have ${memory.length} tiles from your last ${limit} actions. Current position: (${currentPos.x}, ${currentPos.y})`;
 
     const response = {
       success: true,
@@ -189,7 +165,7 @@ exports.handler = async (event) => {
     };
 
   } catch (error) {
-    console.error('Error in recall_all:', error);
+    console.error(`Error in recall_last_${limit}:`, error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message })

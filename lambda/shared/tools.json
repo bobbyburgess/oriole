@@ -73,8 +73,8 @@
       }
     },
     {
-      "name": "recall_all",
-      "description": "Recall all tiles you have seen in the experiment so far. Returns a map of visited tiles with their types (empty, wall, or GOAL).",
+      "name": "recall_last_25",
+      "description": "Quick memory refresh. Returns tiles seen in your last 25 actions. Low context cost - good for checking recent exploration without overwhelming your thinking space.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -84,7 +84,61 @@
           },
           "reasoning": {
             "type": "string",
-            "description": "Why you are recalling memory now"
+            "description": "Why you need this memory refresh (helps you think through your strategy)"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "recall_last_50",
+      "description": "Balanced memory. Returns tiles seen in your last 50 actions. Medium context cost - good general-purpose recall for building spatial awareness.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you need this memory refresh (helps you think through your strategy)"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "recall_last_100",
+      "description": "Deep memory. Returns tiles seen in your last 100 actions. Higher context cost - good for building comprehensive spatial maps when you need more historical data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you need this memory refresh (helps you think through your strategy)"
+          }
+        },
+        "required": ["experimentId"]
+      }
+    },
+    {
+      "name": "recall_last_200",
+      "description": "Maximum memory. Returns tiles seen in your last 200 actions. High context cost - use sparingly when you absolutely need the full picture of your extensive exploration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "integer",
+            "description": "The experiment ID"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Why you need this memory refresh (helps you think through your strategy)"
           }
         },
         "required": ["experimentId"]
