@@ -56,12 +56,24 @@ SELECT
       END
     ELSE '-'
   END as eta,
+  -- Last update time
   CASE
-    WHEN goal_found THEN '🎯 GOAL!'
-    WHEN completed_at IS NOT NULL AND failure_reason IS NOT NULL THEN '❌ ' || (failure_reason::json->>'errorType')
+    WHEN goal_found THEN '🎯 GOAL'
+    WHEN completed_at IS NOT NULL AND failure_reason IS NOT NULL THEN '❌ Failed'
     WHEN completed_at IS NOT NULL THEN '✅ Done'
-    ELSE '▶ Running (' || ROUND(EXTRACT(EPOCH FROM (NOW() - started_at))/60) || 'm)'
-  END as status,
+    WHEN (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id) IS NULL THEN '⏳ Starting'
+    ELSE
+      CASE
+        WHEN EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) < 60 THEN
+          ROUND(EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id)))) || 's ago'
+        WHEN EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) < 3600 THEN
+          ROUND(EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) / 60) || 'm ago'
+        WHEN EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) < 86400 THEN
+          ROUND(EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) / 3600) || 'h ago'
+        ELSE
+          ROUND(EXTRACT(EPOCH FROM (NOW() - (SELECT MAX(timestamp) FROM agent_actions WHERE experiment_id = experiments.id))) / 86400) || 'd ago'
+      END
+  END as last_update,
   CASE
     WHEN EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) >= 86400 THEN
       (EXTRACT(days FROM (COALESCE(completed_at, NOW()) - started_at)))::int || 'd ' ||
