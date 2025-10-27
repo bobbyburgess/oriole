@@ -104,14 +104,28 @@ exports.handler = async (event) => {
       const db = await getDbClient();
 
       const result = await db.query(
-        `SELECT id, model_name, goal_found, started_at,
+        `SELECT id, model_name, goal_found, started_at, completed_at,
                 CASE
                   WHEN failure_reason IS NULL THEN NULL
                   WHEN failure_reason::text ~ '^\\s*\\{' THEN failure_reason::json->>'errorType'
                   ELSE failure_reason::text
-                END as error_type
+                END as error_type,
+                CASE
+                  WHEN completed_at IS NOT NULL THEN 'completed'
+                  WHEN NOT EXISTS (
+                    SELECT 1 FROM agent_actions
+                    WHERE experiment_id = experiments.id
+                    AND created_at > NOW() - INTERVAL '5 minutes'
+                  ) THEN 'stale'
+                  ELSE 'running'
+                END as status
          FROM experiments
          WHERE completed_at IS NOT NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM agent_actions
+              WHERE experiment_id = experiments.id
+              AND created_at > NOW() - INTERVAL '5 minutes'
+            )
          ORDER BY id DESC
          LIMIT 100`
       );
