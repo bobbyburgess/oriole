@@ -20,8 +20,9 @@ const { getOllamaTools } = require('../shared/tools');
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
 
-// Cache prompts to avoid repeated SSM calls
+// Cache prompts and model options to avoid repeated SSM calls
 const promptCache = {};
+const modelOptionsCache = {};
 
 async function getPrompt(promptVersion) {
   if (promptCache[promptVersion]) {
@@ -35,6 +36,47 @@ async function getPrompt(promptVersion) {
   const response = await ssmClient.send(command);
   promptCache[promptVersion] = response.Parameter.Value;
   return promptCache[promptVersion];
+}
+
+/**
+ * Get Ollama model options from Parameter Store (with caching)
+ *
+ * Configurable parameters:
+ * - num_ctx: Context window size (default 32768)
+ * - temperature: Sampling temperature (default 0.2)
+ * - num_predict: Max output tokens (default 2000)
+ * - repeat_penalty: Repetition penalty (default 1.4)
+ */
+async function getOllamaOptions() {
+  if (Object.keys(modelOptionsCache).length > 0) {
+    return modelOptionsCache;
+  }
+
+  // Fetch all Ollama options in parallel
+  const [numCtx, temperature, numPredict, repeatPenalty] = await Promise.all([
+    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
+      .then(res => parseInt(res.Parameter.Value))
+      .catch(() => 32768), // Default: 32K context window
+
+    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/temperature' }))
+      .then(res => parseFloat(res.Parameter.Value))
+      .catch(() => 0.2), // Default: Low temperature for deterministic navigation
+
+    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-predict' }))
+      .then(res => parseInt(res.Parameter.Value))
+      .catch(() => 2000), // Default: 2000 output tokens
+
+    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/repeat-penalty' }))
+      .then(res => parseFloat(res.Parameter.Value))
+      .catch(() => 1.4) // Default: 1.4 to reduce stuck loops
+  ]);
+
+  modelOptionsCache.num_ctx = numCtx;
+  modelOptionsCache.temperature = temperature;
+  modelOptionsCache.num_predict = numPredict;
+  modelOptionsCache.repeat_penalty = repeatPenalty;
+
+  return modelOptionsCache;
 }
 
 async function getOllamaEndpoint() {
@@ -65,9 +107,10 @@ async function getOllamaApiKey() {
  * @param {Array} messages - Conversation history with tool results
  * @param {string} apiKey - API key for auth proxy
  * @param {Array} tools - Tool definitions in OpenAI format
+ * @param {Object} options - Model options (temperature, num_ctx, etc.)
  * @returns {Promise} Ollama response with potential tool_calls
  */
-async function callOllamaChat(endpoint, model, messages, apiKey, tools) {
+async function callOllamaChat(endpoint, model, messages, apiKey, tools, options) {
   return new Promise((resolve, reject) => {
     const url = new URL(`${endpoint}/api/chat`);
     const postData = JSON.stringify({
@@ -75,10 +118,7 @@ async function callOllamaChat(endpoint, model, messages, apiKey, tools) {
       messages,
       tools,
       stream: false,
-      options: {
-        temperature: 0.7,
-        num_predict: 1000
-      }
+      options: options
     });
 
     const req = https.request({
@@ -194,10 +234,12 @@ ${promptText}
 
 Use the provided tools to navigate and explore. You will receive vision feedback after each move showing what you can see from your new position.`;
 
-    // Get Ollama endpoint and API key
+    // Get Ollama endpoint, API key, and model options
     const endpoint = await getOllamaEndpoint();
     const apiKey = await getOllamaApiKey();
+    const modelOptions = await getOllamaOptions();
     console.log(`Ollama endpoint: ${endpoint}`);
+    console.log(`Model options:`, modelOptions);
 
     // Get tools from shared definitions (same as Bedrock Agent)
     const tools = getOllamaTools();
@@ -226,7 +268,7 @@ Use the provided tools to navigate and explore. You will receive vision feedback
       const startTime = Date.now();
 
       // Call Ollama with conversation history and available tools
-      const response = await callOllamaChat(endpoint, modelName, messages, apiKey, tools);
+      const response = await callOllamaChat(endpoint, modelName, messages, apiKey, tools, modelOptions);
 
       const elapsed = Date.now() - startTime;
       console.log(`[TIMING] Ollama call completed in ${elapsed}ms`);

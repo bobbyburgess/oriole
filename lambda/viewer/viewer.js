@@ -115,7 +115,7 @@ exports.handler = async (event) => {
                   WHEN NOT EXISTS (
                     SELECT 1 FROM agent_actions
                     WHERE experiment_id = experiments.id
-                    AND created_at > NOW() - INTERVAL '5 minutes'
+                    AND timestamp > NOW() - INTERVAL '5 minutes'
                   ) THEN 'stale'
                   ELSE 'running'
                 END as status
@@ -124,7 +124,7 @@ exports.handler = async (event) => {
             OR NOT EXISTS (
               SELECT 1 FROM agent_actions
               WHERE experiment_id = experiments.id
-              AND created_at > NOW() - INTERVAL '5 minutes'
+              AND timestamp > NOW() - INTERVAL '5 minutes'
             )
          ORDER BY id DESC
          LIMIT 100`

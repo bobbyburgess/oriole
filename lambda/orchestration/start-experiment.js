@@ -126,14 +126,62 @@ exports.handler = async (event) => {
 
     // Note: prompt text is fetched at runtime in invoke-agent, not stored in DB
 
+    /**
+     * Capture model configuration for reproducibility and A/B testing
+     *
+     * For Ollama experiments, we fetch all configurable parameters from Parameter Store
+     * and store them in the model_config JSONB column. This enables:
+     * - Historical comparison (e.g., before/after context window increase)
+     * - A/B testing (e.g., temperature 0.2 vs 0.7)
+     * - Reproducibility (know exact config that produced results)
+     *
+     * For Bedrock experiments, model_config is NULL (agent config is managed separately)
+     */
+    let modelConfig = null;
+    if (llmProvider === 'ollama') {
+      console.log('Capturing Ollama model configuration...');
+      const [numCtx, temperature, numPredict, repeatPenalty, recallInterval, maxRecallActions, maxMoves, maxDurationMinutes] =
+        await Promise.all([
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/temperature' }))
+            .then(r => parseFloat(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-predict' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/repeat-penalty' }))
+            .then(r => parseFloat(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
+            .then(r => parseInt(r.Parameter.Value)).catch(() => null)
+        ]);
+
+      modelConfig = {
+        num_ctx: numCtx,
+        temperature: temperature,
+        num_predict: numPredict,
+        repeat_penalty: repeatPenalty,
+        recall_interval: recallInterval,
+        max_recall_actions: maxRecallActions,
+        max_moves: maxMoves,
+        max_duration_minutes: maxDurationMinutes
+      };
+      console.log('Model config captured:', modelConfig);
+    }
+
     // Create experiment record
     const db = await getDbClient();
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, maze_id, goal_description, start_x, start_y, started_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       (agent_id, model_name, prompt_version, maze_id, goal_description, start_x, start_y, started_at, model_config)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
        RETURNING id`,
-      [agentId, modelName, promptVersion, mazeId, goalDescription, startX, startY]
+      [agentId, modelName, promptVersion, mazeId, goalDescription, startX, startY,
+       modelConfig ? JSON.stringify(modelConfig) : null]
     );
 
     const experimentId = result.rows[0].id;
