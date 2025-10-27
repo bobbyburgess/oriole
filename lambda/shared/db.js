@@ -156,21 +156,40 @@ async function logAction(experimentId, stepNumber, actionType, reasoning, fromX,
 // Get all tiles the agent has seen across all actions
 // Used by recall_all to provide spatial memory
 //
+// Parameters:
+//   experimentId - The experiment to get tiles for
+//   maxRecentActions - Optional limit on how many recent actions to include (default: all)
+//
 // Returns a merged map of all tiles observed: {"x,y": tileType, ...}
 // If a tile was seen multiple times, the latest observation wins (Object.assign)
-async function getAllSeenTiles(experimentId) {
+//
+// CONTEXT MANAGEMENT: Limiting to recent actions prevents context window overflow
+// Example: maxRecentActions=50 with ~2 tiles/action = ~100 unique tiles in recall
+async function getAllSeenTiles(experimentId, maxRecentActions = null) {
   const db = await getDbClient();
-  const result = await db.query(
-    `SELECT tiles_seen FROM agent_actions
-     WHERE experiment_id = $1
-     ORDER BY step_number`,
-    [experimentId]
-  );
+
+  // Build query with optional LIMIT for recent actions only
+  let query = `SELECT tiles_seen FROM agent_actions
+               WHERE experiment_id = $1
+               ORDER BY step_number DESC`;
+
+  const params = [experimentId];
+
+  if (maxRecentActions !== null) {
+    // LIMIT to most recent N actions (DESC order), then reverse for chronological merge
+    query += ` LIMIT $2`;
+    params.push(maxRecentActions);
+  }
+
+  const result = await db.query(query, params);
 
   // Merge all tiles_seen JSON objects into a single map
+  // Process in chronological order (reverse if we used DESC + LIMIT)
   // Each action's tiles_seen: {"x,y": 0|1|2, ...} (EMPTY|WALL|GOAL)
   const allTiles = {};
-  result.rows.forEach(row => {
+  const rows = maxRecentActions !== null ? result.rows.reverse() : result.rows;
+
+  rows.forEach(row => {
     if (row.tiles_seen) {
       Object.assign(allTiles, row.tiles_seen);
     }

@@ -209,9 +209,18 @@ exports.handler = async (event) => {
     // Calculate rate limit wait time
     // Wait duration ensures we don't exceed model-specific rate limits
     // Formula: 60 / rate_limit_rpm = seconds to wait between requests
-    const rateLimitRpm = await getRateLimitRpm(event.modelName);
-    const waitSeconds = Math.ceil(60 / rateLimitRpm);  // Round up to ensure we stay under limit
-    console.log(`Rate limit: ${rateLimitRpm} req/min, wait duration: ${waitSeconds}s`);
+    // SPECIAL CASE: Local Ollama has no rate limits (your own hardware), skip wait entirely
+    let waitSeconds;
+    let rateLimitRpm;
+    if (event.llmProvider === 'ollama') {
+      waitSeconds = 0;  // No rate limiting for local Ollama
+      rateLimitRpm = null;
+      console.log('Ollama provider detected: skipping rate limit wait (0s)');
+    } else {
+      rateLimitRpm = await getRateLimitRpm(event.modelName);
+      waitSeconds = Math.ceil(60 / rateLimitRpm);  // Round up to ensure we stay under limit
+      console.log(`Rate limit: ${rateLimitRpm} req/min, wait duration: ${waitSeconds}s`);
+    }
 
     // Return all state needed for next step in the workflow
     // The Step Functions state machine uses this to decide whether to:

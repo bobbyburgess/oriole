@@ -17,8 +17,9 @@ const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 
 const ssmClient = new SSMClient();
 
-// Module-level caching for recall interval parameter
+// Module-level caching for configuration parameters
 let cachedRecallInterval = null;
+let cachedMaxRecallActions = null;
 
 async function getRecallInterval() {
   if (cachedRecallInterval !== null) {
@@ -33,6 +34,28 @@ async function getRecallInterval() {
   const response = await ssmClient.send(command);
   cachedRecallInterval = parseInt(response.Parameter.Value);
   return cachedRecallInterval;
+}
+
+async function getMaxRecallActions() {
+  if (cachedMaxRecallActions !== null) {
+    return cachedMaxRecallActions;
+  }
+
+  try {
+    const command = new GetParameterCommand({
+      Name: '/oriole/experiments/max-recall-actions',
+      WithDecryption: false
+    });
+
+    const response = await ssmClient.send(command);
+    cachedMaxRecallActions = parseInt(response.Parameter.Value);
+    return cachedMaxRecallActions;
+  } catch (error) {
+    // If parameter doesn't exist, default to null (unlimited recall)
+    console.warn('No max-recall-actions parameter found, using unlimited recall');
+    cachedMaxRecallActions = null;
+    return null;
+  }
 }
 
 exports.handler = async (event) => {
@@ -100,8 +123,11 @@ exports.handler = async (event) => {
     }
     // First recall is always allowed (no previous recall to check)
 
-    // Get all tiles the agent has seen
-    const seenTiles = await db.getAllSeenTiles(experimentId);
+    // Get max recall actions limit (for context window management)
+    const maxRecallActions = await getMaxRecallActions();
+
+    // Get tiles the agent has seen (limited to recent actions if configured)
+    const seenTiles = await db.getAllSeenTiles(experimentId, maxRecallActions);
 
     // Get current position
     const currentPos = await db.getCurrentPosition(experimentId);
@@ -143,12 +169,18 @@ exports.handler = async (event) => {
       memory.push({ x, y, type: tileType });
     }
 
+    // Build response message with context management info
+    let message = `You have seen ${memory.length} tiles so far. Current position: (${currentPos.x}, ${currentPos.y})`;
+    if (maxRecallActions !== null) {
+      message += ` (showing tiles from last ${maxRecallActions} actions for efficiency)`;
+    }
+
     const response = {
       success: true,
       currentPosition: currentPos,
       tilesSeen: memory.length,
       memory: memory,
-      message: `You have seen ${memory.length} tiles so far. Current position: (${currentPos.x}, ${currentPos.y})`
+      message: message
     };
 
     return {

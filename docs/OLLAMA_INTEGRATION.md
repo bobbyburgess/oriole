@@ -15,11 +15,11 @@ This document explains how to run Oriole maze navigation experiments using local
 ```
 AWS Step Functions (orchestration)
     ↓
-InvokeAgentOllamaFunction → HTTPS (Let's Encrypt) → Home Router
+InvokeAgentOllamaFunction → HTTPS (Let's Encrypt) → Home Router (port 11435)
     ↓                                                     ↓
-    └─────────────────────────────────→ ollama-auth-proxy (port 11435)
-                                                ↓
-                                         Ollama Server (port 11434)
+    └─────────────────────────────────→ Mac Mini: ollama-auth-proxy (port 11435)
+                                                ↓ HTTP (internal LAN)
+                                         Windows: Ollama Server (192.168.0.208:11434)
     ↓
 router.js (action execution) → PostgreSQL
     ↓
@@ -31,6 +31,12 @@ Viewer UI (unchanged)
 - Uses function calling instead of Bedrock Agent orchestration
 - Manually implements multi-turn loop (Bedrock does this automatically)
 - Everything else is identical to Bedrock setup
+
+**Security Architecture:**
+- Only Mac Mini is exposed to internet (router forwards external port 11435 → Mac Mini)
+- Mac Mini handles authentication and HTTPS encryption
+- Windows Ollama stays completely internal, accessed only via LAN
+- API key validation happens at gateway before reaching Ollama
 
 ## How It Works
 
@@ -163,13 +169,13 @@ sudo cp /etc/letsencrypt/live/sf1.tplinkdns.com/fullchain.pem ~/certs/
 sudo chown $USER ~/certs/*.pem
 ```
 
-**Start auth proxy:**
+**Start auth proxy (pointing to Windows Ollama):**
 ```bash
 export OLLAMA_API_KEY="your-32-char-api-key-here"
 export SSL_KEY_PATH="$HOME/certs/privkey.pem"
 export SSL_CERT_PATH="$HOME/certs/fullchain.pem"
 export OLLAMA_PORT=11435
-export OLLAMA_TARGET="http://localhost:11434"
+export OLLAMA_TARGET="http://192.168.0.208:11434"  # Your Windows PC's IP
 
 node tools/ollama-auth-proxy.js
 ```
@@ -177,15 +183,39 @@ node tools/ollama-auth-proxy.js
 You should see:
 ```
 🔒 Ollama auth proxy (HTTPS) listening on 0.0.0.0:11435
-Proxying to: http://localhost:11434
+Proxying to: http://192.168.0.208:11434
+API key configured: ********...
+SSL cert: /Users/bobbyburgess/certs/fullchain.pem
+Logging to: /Users/bobbyburgess/Documents/code/oriole/tools/ollama-proxy.log
 ```
+
+**Note:** `OLLAMA_TARGET` can point to:
+- `http://localhost:11434` - Ollama running on same Mac as proxy
+- `http://192.168.0.x:11434` - Ollama running on different machine (Windows, Linux, etc.)
+- Any internal network IP where Ollama is accessible
 
 ### 4. Configure Router Port Forwarding
 
 On your home router:
-1. Forward external port `11435` → internal IP:11435 (your Mac)
-2. Ensure HTTPS (port 443 is not required, we use custom port)
+1. Forward external port `11435` → **Mac Mini's internal IP:11435** (not Windows)
+   - Example: `11435 (WAN) → 192.168.0.x:11435 (LAN)` where x is your Mac Mini
+2. Ensure HTTPS (port 443 is not required, we use custom port 11435)
 3. Use your dynamic DNS hostname (e.g., `sf1.tplinkdns.com:11435`)
+
+**Important:** The router forwards to the **Mac Mini (proxy)**, not the Windows Ollama server. The Mac Mini then forwards internally to Windows via LAN.
+
+**Testing Note - Hairpin NAT:**
+Many consumer routers don't support "hairpin NAT" (also called NAT loopback). This means you may not be able to test the connection from inside your own network:
+
+```bash
+# This may timeout due to hairpin NAT limitation:
+curl https://sf1.tplinkdns.com:11435/api/version -H "X-API-Key: your-key"
+```
+
+However, **external connections (from AWS Lambda) will work fine** even if local testing fails. To test locally:
+- Use internal IP: `curl https://192.168.0.x:11435/api/version`
+- Or test from cellular: Turn off WiFi and test from phone
+- Or use AWS Lambda test (the real use case)
 
 ### 5. Store Configuration in Parameter Store
 
@@ -318,26 +348,57 @@ From actual testing on maze 1:
 
 ### "Failed to connect to Ollama"
 
-1. **Check Ollama is running:**
-   ```bash
+1. **Check Ollama is running on Windows:**
+   ```cmd
+   REM On Windows
    curl http://localhost:11434/api/tags
+
+   REM Or check if listening on all interfaces (not just 127.0.0.1)
+   netstat -an | findstr 11434
    ```
 
-2. **Check auth proxy is running:**
+   Should show: `TCP 0.0.0.0:11434 ... LISTENING`
+
+   If it shows `127.0.0.1:11434`, Ollama is only listening on localhost. Fix with:
+   ```cmd
+   REM In PowerShell
+   $env:OLLAMA_HOST = "0.0.0.0:11434"
+   ollama serve
+   ```
+
+2. **Check Mac Mini can reach Windows Ollama (LAN test):**
+   ```bash
+   # On Mac Mini
+   curl http://192.168.0.208:11434/api/tags
+   ```
+
+   If this fails, check:
+   - Windows Firewall allows port 11434
+   - Correct Windows IP address
+   - Both machines on same network
+
+3. **Check auth proxy is running (on Mac Mini):**
    ```bash
    curl https://sf1.tplinkdns.com:11435/api/tags \
      -H "X-API-Key: your-api-key"
    ```
 
-3. **Check Parameter Store:**
+   Note: This may timeout from inside your network due to hairpin NAT, but work fine from AWS Lambda.
+
+4. **Check Parameter Store:**
    ```bash
    aws ssm get-parameter --name /oriole/ollama/endpoint --profile bobby
    aws ssm get-parameter --name /oriole/ollama/api-key --with-decryption --profile bobby
    ```
 
-4. **Check Lambda logs:**
+5. **Check Lambda logs:**
    ```bash
    aws logs tail /aws/lambda/OrioleStack-InvokeAgentOllamaFunction... --follow --profile bobby
+   ```
+
+6. **Check proxy logs (on Mac Mini):**
+   ```bash
+   tail -f /Users/bobbyburgess/Documents/code/oriole/tools/ollama-proxy.log
    ```
 
 ### "No tool calls requested"
@@ -420,6 +481,22 @@ AWS Bedrock Agents don't support "bring your own model" - the agent definition i
 - Exposing unauthenticated LLM to internet = security risk
 - Auth proxy adds API key requirement
 - HTTPS prevents MITM attacks
+
+### Why Separate Proxy and Ollama Machines?
+
+**Benefits of Mac Mini (proxy) → Windows (Ollama) setup:**
+
+1. **Security**: Windows never exposed to internet - only Mac Mini accepts external connections
+2. **Hardware flexibility**: Run Ollama on powerful Windows PC with better GPU, keep lightweight Mac Mini as gateway
+3. **Separation of concerns**: Mac Mini handles SSL/auth/logging, Windows focuses on model inference
+4. **Easy maintenance**: Update/restart Windows Ollama without affecting external connectivity
+5. **Firewall simplification**: Only Mac Mini needs incoming firewall rules, Windows stays internal
+
+**Alternative (single-machine):**
+```bash
+export OLLAMA_TARGET="http://localhost:11434"
+```
+Run both proxy and Ollama on same Mac. Simpler but requires Mac to have sufficient resources for large models.
 
 ### Why Function Calling Instead of Text Parsing?
 
