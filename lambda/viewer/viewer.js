@@ -886,20 +886,18 @@ function getViewerHTML(colors) {
        * grid_data is a 2D array where grid[y][x] contains:
        * - 0: Empty/walkable cell
        * - 1: Wall (impassable)
-       *
-       * Goal position is stored separately in maze.goal_x, maze.goal_y
-       * (not encoded in the grid_data array)
+       * - 2: Goal (target position agent must reach)
        */
       for (let y = 0; y < grid.length; y++) {
         for (let x = 0; x < grid[y].length; x++) {
           const cell = grid[y][x];
 
-          if (x === maze.goal_x && y === maze.goal_y) {
-            // Goal cell: Where agent needs to reach
-            ctx.fillStyle = COLORS.goal;
-          } else if (cell === 1) {
+          if (cell === 1) {
             // Wall cell: Impassable obstacle
             ctx.fillStyle = COLORS.wall;
+          } else if (cell === 2) {
+            // Goal cell: Where agent needs to reach
+            ctx.fillStyle = COLORS.goal;
           } else {
             // Empty cell: Walkable space
             ctx.fillStyle = COLORS.background;
