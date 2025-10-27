@@ -105,6 +105,147 @@ When you're done:
 1. Close the PowerShell window running `ollama serve`
 2. Optionally, restart the Ollama system tray app for normal (localhost-only) operation
 
+## Setting Up as a Persistent Windows Service (Auto-Start)
+
+If you want Ollama to automatically start with network access on boot, you can configure it as a Windows service. This is more convenient but less secure (always accessible on network).
+
+### Prerequisites
+
+1. **Set the machine-level environment variable permanently** (run PowerShell as Administrator):
+
+   ```powershell
+   [System.Environment]::SetEnvironmentVariable('OLLAMA_HOST', '0.0.0.0:11434', 'Machine')
+   ```
+
+2. **Reboot** to ensure the environment variable takes effect system-wide.
+
+### Option 1: Using NSSM (Non-Sucking Service Manager)
+
+**Step 1: Install NSSM**
+
+Download NSSM from [nssm.cc](https://nssm.cc/download) or via Chocolatey:
+
+```powershell
+# Using Chocolatey (requires admin PowerShell)
+choco install nssm
+```
+
+**Step 2: Create the Service** (run PowerShell as Administrator)
+
+```powershell
+# Navigate to Ollama installation directory
+cd "C:\Program Files\Ollama"
+
+# Create service using NSSM
+nssm install OllamaService "C:\Program Files\Ollama\ollama.exe" serve
+
+# Set service to start automatically
+nssm set OllamaService Start SERVICE_AUTO_START
+
+# Set environment variable for the service
+nssm set OllamaService AppEnvironmentExtra OLLAMA_HOST=0.0.0.0:11434
+
+# Start the service
+nssm start OllamaService
+```
+
+**Step 3: Verify Service is Running**
+
+```powershell
+# Check service status
+Get-Service OllamaService
+
+# Verify it's listening on 0.0.0.0:11434
+netstat -ano | Select-String "11434"
+```
+
+**Managing the Service:**
+
+```powershell
+# Stop the service
+nssm stop OllamaService
+
+# Start the service
+nssm start OllamaService
+
+# Restart the service
+nssm restart OllamaService
+
+# Remove the service (if you want to uninstall)
+nssm remove OllamaService confirm
+```
+
+### Option 2: Using Windows Task Scheduler
+
+**Step 1: Create a PowerShell startup script**
+
+Create `C:\Scripts\start-ollama-network.ps1`:
+
+```powershell
+# Stop any existing Ollama processes
+Get-Process | Where-Object {$_.Name -like "*ollama*"} | Stop-Process -Force
+Start-Sleep -Seconds 2
+
+# Start Ollama with network access
+Start-Process "C:\Program Files\Ollama\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden
+```
+
+**Step 2: Create a scheduled task** (run PowerShell as Administrator)
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -File C:\Scripts\start-ollama-network.ps1"
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+
+Register-ScheduledTask -TaskName "Ollama Network Service" -Action $action -Trigger $trigger -Principal $principal -Settings $settings
+```
+
+**Step 3: Test the task**
+
+```powershell
+# Manually run the task to test
+Start-ScheduledTask -TaskName "Ollama Network Service"
+
+# Verify it's running
+netstat -ano | Select-String "11434"
+```
+
+### Security Considerations
+
+**⚠️ Important:** Running Ollama as a persistent service with network access means:
+
+1. **Always accessible**: Your Ollama instance will be accessible on the network whenever the machine is running
+2. **No authentication**: Ollama does not have built-in authentication - anyone on your network can use it
+3. **Resource usage**: The service will consume memory even when not in use
+4. **Auto-recovery**: If Ollama crashes, the service will restart automatically
+
+**Recommendations:**
+- Only use persistent service mode on trusted networks
+- Consider using Windows Firewall rules to restrict access to specific IP addresses
+- Monitor resource usage and set up alerting if needed
+- Use manual mode (non-service) for occasional use
+
+### Reverting to Manual Mode
+
+**If using NSSM:**
+```powershell
+nssm stop OllamaService
+nssm remove OllamaService confirm
+```
+
+**If using Task Scheduler:**
+```powershell
+Unregister-ScheduledTask -TaskName "Ollama Network Service" -Confirm:$false
+```
+
+**Remove environment variable:**
+```powershell
+[System.Environment]::SetEnvironmentVariable('OLLAMA_HOST', $null, 'Machine')
+```
+
+Then reboot to return to default localhost-only behavior.
+
 ## Troubleshooting
 
 ### Still showing 127.0.0.1:11434?

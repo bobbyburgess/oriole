@@ -17,10 +17,10 @@ const { getCurrentPosition, updateTurnTokens } = require('../shared/db');
 const ssmClient = new SSMClient();
 
 // Module-level caching to reuse across warm Lambda invocations
+// Note: Only cache stable values (DB password, rate limits)
+// Do NOT cache configuration parameters (max-moves, max-duration) for operational flexibility
 let client = null;
 let cachedDbPassword = null;
-let cachedMaxMoves = null;
-let cachedMaxDurationMinutes = null;
 const rateLimitCache = {};
 
 async function getDbPassword() {
@@ -39,33 +39,27 @@ async function getDbPassword() {
 }
 
 async function getMaxMoves() {
-  if (cachedMaxMoves) {
-    return cachedMaxMoves;
-  }
-
+  // Always fetch fresh value for operational flexibility
+  // Performance impact is negligible (~30ms) compared to agent inference time
   const command = new GetParameterCommand({
     Name: '/oriole/max-moves',
     WithDecryption: false
   });
 
   const response = await ssmClient.send(command);
-  cachedMaxMoves = parseInt(response.Parameter.Value);
-  return cachedMaxMoves;
+  return parseInt(response.Parameter.Value);
 }
 
 async function getMaxDurationMinutes() {
-  if (cachedMaxDurationMinutes) {
-    return cachedMaxDurationMinutes;
-  }
-
+  // Always fetch fresh value for operational flexibility
+  // Performance impact is negligible (~30ms) compared to agent inference time
   const command = new GetParameterCommand({
     Name: '/oriole/max-duration-minutes',
     WithDecryption: false
   });
 
   const response = await ssmClient.send(command);
-  cachedMaxDurationMinutes = parseInt(response.Parameter.Value);
-  return cachedMaxDurationMinutes;
+  return parseInt(response.Parameter.Value);
 }
 
 async function getRateLimitRpm(modelName) {

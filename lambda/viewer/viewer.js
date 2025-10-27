@@ -76,6 +76,17 @@ exports.handler = async (event) => {
   try {
     const path = event.rawPath || event.path || '';
 
+    // Redirect root path to /viewer
+    if (path === '/' || path === '') {
+      return {
+        statusCode: 302,
+        headers: {
+          'Location': '/viewer'
+        },
+        body: ''
+      };
+    }
+
     // Serve the viewer UI
     if (path === '/viewer') {
       const colors = await getColorConfig();
@@ -94,7 +105,11 @@ exports.handler = async (event) => {
 
       const result = await db.query(
         `SELECT id, model_name, goal_found, started_at,
-                failure_reason::json->>'errorType' as error_type
+                CASE
+                  WHEN failure_reason IS NULL THEN NULL
+                  WHEN failure_reason::text ~ '^\\s*\\{' THEN failure_reason::json->>'errorType'
+                  ELSE failure_reason::text
+                END as error_type
          FROM experiments
          WHERE completed_at IS NOT NULL
          ORDER BY id DESC
