@@ -35,3 +35,8 @@ logs/
 # Build outputs
 dist/
 build/
+
+# Backup files
+*.bak
+*.backup
+*.old

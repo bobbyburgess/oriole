@@ -19,6 +19,11 @@ SELECT
   RPAD(model_name, 25) as model,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,
+  ROUND(
+    (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
+    NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
+    1
+  ) as avg_per_turn,
   CASE
     WHEN goal_found THEN '🎯 GOAL!'
     WHEN completed_at IS NOT NULL AND failure_reason IS NOT NULL THEN '❌ ' || (failure_reason::json->>'errorType')
