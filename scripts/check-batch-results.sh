@@ -29,6 +29,29 @@ SELECT
     NULLIF(EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) / 60.0, 0),
     1
   ) as moves_per_min,
+  -- Progress percentage
+  CASE
+    WHEN model_config->>'max_moves' IS NOT NULL THEN
+      ROUND(100.0 * (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) /
+            NULLIF((model_config->>'max_moves')::numeric, 0), 0) || '%'
+    ELSE '-'
+  END as progress,
+  -- ETA to completion
+  CASE
+    WHEN completed_at IS NOT NULL THEN '-'
+    WHEN model_config->>'max_moves' IS NOT NULL AND
+         (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) > 0 THEN
+      CASE
+        WHEN ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)) <= 0 THEN 'done'
+        ELSE
+          ROUND(
+            ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)) /
+            NULLIF((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
+                   NULLIF(EXTRACT(EPOCH FROM (NOW() - started_at)) / 60.0, 0), 0)
+          )::int || 'm'
+      END
+    ELSE '-'
+  END as eta,
   CASE
     WHEN goal_found THEN '🎯 GOAL!'
     WHEN completed_at IS NOT NULL AND failure_reason IS NOT NULL THEN '❌ ' || (failure_reason::json->>'errorType')
