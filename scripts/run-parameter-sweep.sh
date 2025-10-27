@@ -2,13 +2,13 @@
 # Parameter Sweep Experiment Batch
 # Tests different configurations of qwen2.5:7b for optimal maze navigation
 #
-# This will run 10 experiments testing:
+# This will run 12 experiments testing:
 # - Series A: Context window sizes (3 experiments)
-# - Series B: Temperature values (4 experiments)
+# - Series B: Temperature values (6 experiments)
 # - Series C: Repeat penalty values (3 experiments)
 #
 # Each experiment takes ~16 minutes at 500 moves
-# Total estimated time: ~2.5 hours
+# Total estimated time: ~3.2 hours
 
 set -e  # Exit on error
 
@@ -18,15 +18,15 @@ MODEL="qwen2.5:7b"
 MAZE_ID="1"
 PROMPT_VERSION="v1"
 
-echo "🧪 Starting Parameter Sweep - 10 Experiments"
+echo "🧪 Starting Parameter Sweep - 12 Experiments"
 echo "=============================================="
 echo ""
 echo "Model: $MODEL"
 echo "Maze: #$MAZE_ID (60x60 grid)"
 echo "Max moves: 500 (from Parameter Store)"
 echo ""
-echo "⚠️  This will run 10 experiments sequentially"
-echo "⏱️  Estimated time: ~2.5 hours"
+echo "⚠️  This will run 12 experiments sequentially"
+echo "⏱️  Estimated time: ~3.2 hours"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
@@ -85,10 +85,12 @@ echo "┃  SERIES B: Temperature (Randomness)       ┃"
 echo "┃  Question: Deterministic vs creative?    ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 
-run_experiment "B1" "Very Focused" "32768" "0.1" "1.4"
-run_experiment "B2" "Focused (baseline)" "32768" "0.2" "1.4"
-run_experiment "B3" "Balanced" "32768" "0.5" "1.4"
-run_experiment "B4" "Creative" "32768" "0.7" "1.4"
+run_experiment "B1" "Pure Determinism" "32768" "0.0" "1.4"
+run_experiment "B2" "Very Focused" "32768" "0.1" "1.4"
+run_experiment "B3" "Focused (baseline)" "32768" "0.2" "1.4"
+run_experiment "B4" "Balanced" "32768" "0.5" "1.4"
+run_experiment "B5" "Creative" "32768" "0.7" "1.4"
+run_experiment "B6" "High Randomness" "32768" "1.0" "1.4"
 
 # ========================================
 # SERIES C: Repeat Penalty
@@ -108,13 +110,13 @@ run_experiment "C3" "Strong Penalty" "32768" "0.2" "1.6"
 # ========================================
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎉 All 10 experiments launched!"
+echo "🎉 All 12 experiments launched!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📊 Monitor progress with:"
 echo "   watch -n 5 ./scripts/check-batch-results.sh 1"
 echo ""
-echo "Expected completion: ~2.5 hours from now"
+echo "Expected completion: ~3.2 hours from now"
 echo ""
-echo "Experiment IDs should be: 1-10"
+echo "Experiment IDs should be: 1-12"
 echo ""
