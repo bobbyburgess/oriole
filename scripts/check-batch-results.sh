@@ -36,7 +36,7 @@ SELECT
      WHERE experiment_id = experiments.id
      GROUP BY turn_number
    ) turn_counts
-  ) as max_per_turn,
+  ) as most_in_turn,
   -- Token usage
   COALESCE(TO_CHAR((SELECT SUM(input_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_in,
   COALESCE(TO_CHAR((SELECT SUM(output_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_out,

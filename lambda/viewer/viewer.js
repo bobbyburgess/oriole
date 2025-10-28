@@ -454,6 +454,10 @@ function getViewerHTML(colors) {
         <span id="stepInfo">No experiment loaded</span>
       </div>
 
+      <div style="font-size: 12px; color: #666; margin-top: 8px;">
+        <span id="refreshRateInfo">Detecting display refresh rate...</span>
+      </div>
+
       <div id="user-info"></div>
     </div>
 
@@ -531,6 +535,48 @@ function getViewerHTML(colors) {
      */
     let canvasMouseMoveHandler = null;
     let canvasMouseLeaveHandler = null;
+
+    /**
+     * DETECT DISPLAY REFRESH RATE
+     * Uses requestAnimationFrame to measure the actual monitor refresh rate.
+     * Samples 60 frames (~1 second) and calculates average frame time.
+     *
+     * This determines the maximum useful playback speed:
+     * - 60 Hz display → min 16.6ms per frame
+     * - 120 Hz display → min 8.3ms per frame
+     * - 144 Hz display → min 6.9ms per frame
+     *
+     * Returns: { fps, frameTime } where fps is rounded and frameTime is in ms
+     */
+    async function detectRefreshRate() {
+      return new Promise((resolve) => {
+        let frameTimes = [];
+        let frameCount = 0;
+        const samplesToCollect = 60; // Sample ~1 second worth of frames
+
+        function measureFrame(timestamp) {
+          frameTimes.push(timestamp);
+          frameCount++;
+
+          if (frameCount < samplesToCollect) {
+            requestAnimationFrame(measureFrame);
+          } else {
+            // Calculate average time between frames
+            let totalDelta = 0;
+            for (let i = 1; i < frameTimes.length; i++) {
+              totalDelta += frameTimes[i] - frameTimes[i - 1];
+            }
+            const avgFrameTime = totalDelta / (frameTimes.length - 1);
+            const fps = Math.round(1000 / avgFrameTime);
+
+            console.log(\`Detected display refresh rate: \${fps} Hz (\${avgFrameTime.toFixed(2)}ms per frame)\`);
+            resolve({ fps, frameTime: avgFrameTime });
+          }
+        }
+
+        requestAnimationFrame(measureFrame);
+      });
+    }
 
     /**
      * INITIALIZE APPLICATION ON PAGE LOAD
@@ -687,6 +733,16 @@ function getViewerHTML(colors) {
 
       // Fetch and populate dropdown with available experiments
       await loadExperimentsList();
+
+      // Detect display refresh rate and show in UI
+      detectRefreshRate().then(({ fps, frameTime }) => {
+        const refreshRateInfo = document.getElementById('refreshRateInfo');
+        refreshRateInfo.textContent = \`Display: \${fps} Hz (\${frameTime.toFixed(1)}ms per frame)\`;
+        refreshRateInfo.title = \`Your monitor refreshes at \${fps} frames per second. Playback faster than \${Math.ceil(frameTime)}ms won't look smoother.\`;
+      }).catch(err => {
+        console.warn('Failed to detect refresh rate:', err);
+        document.getElementById('refreshRateInfo').textContent = 'Display: Unable to detect';
+      });
     }
 
     /**
