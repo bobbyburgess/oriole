@@ -43,6 +43,16 @@ Batch 1-3 results showed:
 **Realistic:** 0-1 successes (lucky initial direction)
 **Optimistic:** 2+ successes (models adapt strategy under constraint)
 
+### Results
+
+**Compatibility Issues Discovered:**
+- ❌ **llama3.2:3b** - Does NOT support Ollama function calling (exp 32, 33 failed)
+  - Error: "no message field" in response
+  - Lightweight 3b architecture lacks tool support
+- ✅ **llama3.1:8b** - Function calling works correctly (exp 34, 35 running)
+
+**Conclusion:** Only llama3.1:8b is compatible. Llama3.2 series removed from system.
+
 ---
 
 ## Batch 3: Multi-Model Comparison (Oct 27, 2025 - 11:08 PM)
@@ -140,6 +150,27 @@ type (empty, wall, or GOAL).
 
 **If architecture matters:**
 - deepseek-r1 performs disproportionately well for spatial tasks
+
+### Results
+
+**Status:** Batch partially failed due to connectivity and compatibility issues.
+
+**Completed Experiments:**
+- ✅ Exp 20: qwen2.5:7b v5 - 491 steps, no goal found
+- ✅ Exp 21: qwen2.5:7b v1 - 471 steps, no goal found
+
+**Failed Experiments:**
+- ❌ Exp 22-23: **qwen2.5:14b** - Function calling NOT supported
+  - Error: "no message field" in Ollama response
+  - Model removed from system
+- ❌ Exp 24-31: **Connection timeout** - Windows machine offline when triggered
+  - llama3.2:3b, llama3.1:8b, deepseek-r1:7b, gpt-oss:20b
+  - Re-tested llama models in Batch 4
+
+**Key Findings:**
+1. **qwen2.5:14b incompatible** - Lacks proper function calling support
+2. **Prompt v5 slightly worse** - v5 used 20 more steps than v1 (491 vs 471)
+3. **No successes** - Both qwen2.5:7b experiments hit 500-step limit without finding goal
 
 ### Analysis Queries
 

@@ -15,14 +15,13 @@ echo "Prompt Version: $PROMPT_VERSION"
 echo ""
 
 # Models to test (in order from smallest to largest)
-# Note: Only models with Ollama tool calling support currently installed
+# Note: Only models with verified Ollama function calling support
+# Excluded: llama3.2:latest (no function calling), qwen2.5:14b (invalid message format)
 MODELS=(
   "qwen2.5:1.5b"         # 1.5B - smallest model
-  "llama3.2:latest"      # 3B - baseline
   "qwen2.5:3b"           # 3B - Qwen variant
   "qwen2.5:7b"           # 7B - mid-small
   "llama3.1:8b"          # 8B - speed reference
-  "qwen2.5:14b"          # 14B - best mid-size
   "mistral-small:latest" # 22B - Mistral
   "mixtral:8x7b"         # 47B - MoE
   "llama3.3:70b"         # 70B - Meta's latest

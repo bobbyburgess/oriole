@@ -270,24 +270,24 @@ curl http://localhost:11434/api/version
 
 ## Installed Models
 
-As of 2025-10-26, the following models are installed and support Ollama tool calling:
+As of 2025-10-28, the following models are installed and support Ollama tool calling:
 
-- llama3.1:8b
-- llama3.2:latest
+- llama3.1:8b ✅ Function calling supported
 - llama3.3:70b
 - mistral-small:latest
 - mixtral:8x7b
 - qwen2.5:1.5b
 - qwen2.5:3b
-- qwen2.5:7b
-- qwen2.5:14b
+- qwen2.5:7b ✅ Function calling supported
 - qwen2.5:72b
 
-**Removed models** (don't support Ollama tool calling):
-- codellama:13b
-- mistral:7b
-- phi4:latest
-- qwen2.5-coder:32b
+**Removed models** (don't support Ollama function calling):
+- codellama:13b - No tool support
+- llama3.2:latest (3b) - Lightweight model lacks function calling
+- mistral:7b - No tool support
+- phi4:latest - No tool support
+- qwen2.5:14b - Invalid response format (no message field)
+- qwen2.5-coder:32b - No tool support
 
 ## References
 
