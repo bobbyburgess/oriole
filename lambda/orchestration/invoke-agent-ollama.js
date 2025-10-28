@@ -20,9 +20,10 @@ const { getOllamaTools } = require('../shared/tools');
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
 
-// Cache prompts to avoid repeated SSM calls
+// Cache prompts and system config to avoid repeated SSM calls
 // Note: Model options are NOT cached to avoid config pollution between experiments
 const promptCache = {};
+let cachedMaxActionsPerTurn = null;
 
 async function getPrompt(promptVersion) {
   if (promptCache[promptVersion]) {
@@ -36,6 +37,41 @@ async function getPrompt(promptVersion) {
   const response = await ssmClient.send(command);
   promptCache[promptVersion] = response.Parameter.Value;
   return promptCache[promptVersion];
+}
+
+/**
+ * Get max actions per turn from Parameter Store
+ *
+ * Controls how many tool calls Ollama can make in a single turn before
+ * returning control to the orchestration loop.
+ *
+ * Special values:
+ * - 0 = Unlimited actions (useful for free local Ollama)
+ * - N > 0 = Limit to N actions per turn
+ *
+ * Cached across warm Lambda invocations for performance.
+ */
+async function getMaxActionsPerTurn() {
+  if (cachedMaxActionsPerTurn !== null) {
+    return cachedMaxActionsPerTurn;
+  }
+
+  try {
+    const command = new GetParameterCommand({
+      Name: '/oriole/ollama/max-actions-per-turn'
+    });
+    const response = await ssmClient.send(command);
+    const value = parseInt(response.Parameter.Value, 10);
+
+    // 0 means unlimited - use Infinity for loop checks
+    cachedMaxActionsPerTurn = value === 0 ? Infinity : value;
+
+    console.log(`Max actions per turn loaded from Parameter Store: ${value === 0 ? 'unlimited' : value}`);
+    return cachedMaxActionsPerTurn;
+  } catch (error) {
+    console.warn('Failed to load max-actions-per-turn from Parameter Store, using default of 50:', error.message);
+    return 50; // Fallback to generous default
+  }
 }
 
 /**
@@ -243,17 +279,17 @@ Use the provided tools to navigate and explore. You will receive vision feedback
     ];
 
     let actionCount = 0;
-    const maxActions = 8;
+    const maxActions = await getMaxActionsPerTurn();
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let goalFound = false;
 
-    console.log(`\n[TURN ${turnNumber}] Starting Ollama orchestration loop (max ${maxActions} actions)`);
+    console.log(`\n[TURN ${turnNumber}] Starting Ollama orchestration loop (max ${maxActions === Infinity ? 'unlimited' : maxActions} actions)`);
 
     // Orchestration loop - mirrors Bedrock Agent's behavior
     // Continue calling Ollama until it stops requesting tools or max actions reached
     while (actionCount < maxActions) {
-      console.log(`\n[ACTION ${actionCount + 1}/${maxActions}] Calling Ollama...`);
+      console.log(`\n[ACTION ${actionCount + 1}${maxActions === Infinity ? '' : `/${maxActions}`}] Calling Ollama...`);
       const startTime = Date.now();
 
       // Call Ollama with conversation history and available tools
