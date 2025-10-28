@@ -85,10 +85,10 @@ NUM_PREDICT=${10:-""}
 # Build config JSON if parameters provided
 if [ -n "$NUM_CTX" ] || [ -n "$TEMPERATURE" ] || [ -n "$REPEAT_PENALTY" ] || [ -n "$NUM_PREDICT" ]; then
   CONFIG_PARTS=()
-  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"numCtx\": $NUM_CTX")
+  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"maxContextWindow\": $NUM_CTX")
   [ -n "$TEMPERATURE" ] && CONFIG_PARTS+=("\"temperature\": $TEMPERATURE")
   [ -n "$REPEAT_PENALTY" ] && CONFIG_PARTS+=("\"repeatPenalty\": $REPEAT_PENALTY")
-  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"numPredict\": $NUM_PREDICT")
+  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"maxOutputTokens\": $NUM_PREDICT")
 
   CONFIG_ITEMS=$(printf '%s\n' "${CONFIG_PARTS[@]}" | paste -sd ',' -)
   CONFIG_JSON=",
@@ -126,7 +126,7 @@ aws events put-events --entries "[{
     "mazeId": 1,
     "promptVersion": "v1",
     "config": {
-      "numCtx": 2048,
+      "maxContextWindow": 2048,
       "temperature": 0.1,
       "repeatPenalty": 1.0
     }
@@ -165,9 +165,9 @@ if (llmProvider === 'ollama') {
 
   modelConfig = {
     // Model-specific config from event (varies per experiment)
-    num_ctx: config.numCtx || 32768,
+    num_ctx: config.maxContextWindow || 32768,
     temperature: config.temperature !== undefined ? config.temperature : 0.2,
-    num_predict: config.numPredict || 2000,
+    num_predict: config.maxOutputTokens || 2000,
     repeat_penalty: config.repeatPenalty || 1.4,
     // System config from Parameter Store (stable across experiments)
     recall_interval: recallInterval,
@@ -227,9 +227,9 @@ async function getOllamaOptions(eventConfig) {
 
   console.log('Using config from event:', eventConfig);
   return {
-    num_ctx: eventConfig.numCtx || 32768,
+    num_ctx: eventConfig.maxContextWindow || 32768,
     temperature: eventConfig.temperature !== undefined ? eventConfig.temperature : 0.2,
-    num_predict: eventConfig.numPredict || 2000,
+    num_predict: eventConfig.maxOutputTokens || 2000,
     repeat_penalty: eventConfig.repeatPenalty || 1.4
   };
 }
@@ -331,8 +331,8 @@ Each experiment has exactly the config it was triggered with.
 
 Config is **immutable** once embedded in event:
 
-- Trigger 1 creates event with `{numCtx: 2048}`
-- Trigger 2 creates event with `{numCtx: 8192}`
+- Trigger 1 creates event with `{maxContextWindow: 2048}`
+- Trigger 2 creates event with `{maxContextWindow: 8192}`
 - Each event carries its own config through the workflow
 - No shared state = no races
 
@@ -519,7 +519,7 @@ aws logs tail /aws/lambda/OrioleStack-InvokeAgentOllamaFunction... \
 
 **Expected log:**
 ```
-Using config from event: { numCtx: 2048, temperature: 0.1, repeatPenalty: 1.0 }
+Using config from event: { maxContextWindow: 2048, temperature: 0.1, repeatPenalty: 1.0 }
 ```
 
 **NOT:**

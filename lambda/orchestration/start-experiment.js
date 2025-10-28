@@ -167,12 +167,26 @@ exports.handler = async (event) => {
           .catch(err => { console.warn('Failed to read /oriole/gameplay/vision-range:', err.message); return null; })
       ]);
 
+      // Validate all required config fields are present
+      if (config.maxContextWindow === undefined) {
+        throw new Error('maxContextWindow must be provided in config for Ollama experiments');
+      }
+      if (config.temperature === undefined) {
+        throw new Error('temperature must be provided in config for Ollama experiments');
+      }
+      if (config.maxOutputTokens === undefined) {
+        throw new Error('maxOutputTokens must be provided in config for Ollama experiments');
+      }
+      if (config.repeatPenalty === undefined) {
+        throw new Error('repeatPenalty must be provided in config for Ollama experiments');
+      }
+
       modelConfig = {
         // Model-specific config from event (varies per experiment)
-        num_ctx: config.numCtx || 32768,
-        temperature: config.temperature !== undefined ? config.temperature : 0.2,
-        num_predict: config.numPredict || 2000,
-        repeat_penalty: config.repeatPenalty || 1.4,
+        num_ctx: config.maxContextWindow,
+        temperature: config.temperature,
+        num_predict: config.maxOutputTokens,
+        repeat_penalty: config.repeatPenalty,
         // System config from Parameter Store (stable across experiments)
         recall_interval: recallInterval,
         max_recall_actions: maxRecallActions,

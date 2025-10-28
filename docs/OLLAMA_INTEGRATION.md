@@ -340,10 +340,10 @@ Each experiment's config is embedded in the EventBridge event and travels atomic
 ### Configuration Hierarchy
 
 1. **Per-experiment config** (from event, varies per experiment):
-   - `numCtx`: Context window size (e.g., 2048, 8192, 32768)
+   - `maxContextWindow`: Total context window size in tokens (e.g., 2048, 8192, 32768)
    - `temperature`: Sampling temperature (e.g., 0.0, 0.2, 0.5, 1.0)
    - `repeatPenalty`: Repetition penalty (e.g., 1.0, 1.2, 1.4, 1.6)
-   - `numPredict`: Max output tokens (default: 2000)
+   - `maxOutputTokens`: Max tokens in model output (e.g., 2000)
 
 2. **System config** (from Parameter Store, stable across experiments):
    - `recall_interval`: Moves between recall_all calls (default: 10)

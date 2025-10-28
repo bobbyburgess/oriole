@@ -78,10 +78,10 @@ async function getMaxActionsPerTurn() {
  * This ensures atomic, race-condition-free configuration.
  *
  * Configurable parameters:
- * - num_ctx: Context window size (default 32768)
+ * - maxContextWindow: Total context window size in tokens (default 32768)
  * - temperature: Sampling temperature (default 0.2)
- * - num_predict: Max output tokens (default 2000)
- * - repeat_penalty: Repetition penalty (default 1.4)
+ * - maxOutputTokens: Max tokens in model output (default 2000)
+ * - repeatPenalty: Repetition penalty (default 1.4)
  *
  * @param {Object} eventConfig - Config from event.config (REQUIRED)
  * @throws {Error} If config not provided in event
@@ -91,12 +91,26 @@ async function getOllamaOptions(eventConfig) {
     throw new Error('Config must be provided in event. Pass config parameters when triggering experiment.');
   }
 
+  // Validate all required config fields are present
+  if (eventConfig.maxContextWindow === undefined) {
+    throw new Error('maxContextWindow must be provided in config');
+  }
+  if (eventConfig.temperature === undefined) {
+    throw new Error('temperature must be provided in config');
+  }
+  if (eventConfig.maxOutputTokens === undefined) {
+    throw new Error('maxOutputTokens must be provided in config');
+  }
+  if (eventConfig.repeatPenalty === undefined) {
+    throw new Error('repeatPenalty must be provided in config');
+  }
+
   console.log('Using config from event:', eventConfig);
   return {
-    num_ctx: eventConfig.numCtx || 32768,
-    temperature: eventConfig.temperature !== undefined ? eventConfig.temperature : 0.2,
-    num_predict: eventConfig.numPredict || 2000,
-    repeat_penalty: eventConfig.repeatPenalty || 1.4
+    num_ctx: eventConfig.maxContextWindow,
+    temperature: eventConfig.temperature,
+    num_predict: eventConfig.maxOutputTokens,
+    repeat_penalty: eventConfig.repeatPenalty
   };
 }
 

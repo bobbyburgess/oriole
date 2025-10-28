@@ -105,7 +105,7 @@ flowchart TD
 ```javascript
 // Only for llmProvider='ollama'
 if (llmProvider === 'ollama') {
-  const [numCtx, temperature, ...] = await Promise.all([
+  const [maxContextWindow, temperature, ...] = await Promise.all([
     ssmClient.send(new GetParameterCommand({Name: '/oriole/ollama/num-ctx'}))
       .then(r => parseInt(r.Parameter.Value))
       .catch(() => null),  // Defaults if missing
@@ -113,9 +113,9 @@ if (llmProvider === 'ollama') {
   ]);
 
   modelConfig = {
-    num_ctx: numCtx,
+    num_ctx: maxContextWindow,
     temperature: temperature,
-    num_predict: numPredict,
+    num_predict: maxOutputTokens,
     repeat_penalty: repeatPenalty,
     recall_interval: recallInterval,
     max_recall_actions: maxRecallActions,
@@ -163,7 +163,7 @@ async function getOllamaOptions() {
   }
 
   // Fetch once, cache for Lambda lifetime
-  const [numCtx, temperature, numPredict, repeatPenalty] = await Promise.all([
+  const [maxContextWindow, temperature, maxOutputTokens, repeatPenalty] = await Promise.all([
     ssmClient.send(new GetParameterCommand({Name: '/oriole/ollama/num-ctx'}))
       .then(res => parseInt(res.Parameter.Value))
       .catch(() => 32768),  // Fallback default
@@ -171,7 +171,7 @@ async function getOllamaOptions() {
   ]);
 
   // Cache in memory
-  modelOptionsCache.num_ctx = numCtx;
+  modelOptionsCache.num_ctx = maxContextWindow;
   modelOptionsCache.temperature = temperature;
   // ...
 

@@ -15,7 +15,7 @@ REPEAT_PENALTY=${9:-""}  # Optional: repetition penalty
 NUM_PREDICT=${10:-""}    # Optional: max output tokens
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
-  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [num-ctx] [temperature] [repeat-penalty] [num-predict]"
+  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [max-context-window] [temperature] [repeat-penalty] [max-output-tokens]"
   echo ""
   echo "Example:"
   echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1"
@@ -33,10 +33,10 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
   echo "Prompt versions: v1 (default), v2"
   echo ""
   echo "Config parameters (optional for Ollama):"
-  echo "  num-ctx:        Context window size (e.g., 2048, 8192, 32768)"
-  echo "  temperature:    Sampling temperature (e.g., 0.0, 0.2, 0.7)"
-  echo "  repeat-penalty: Repetition penalty (e.g., 1.0, 1.4, 1.6)"
-  echo "  num-predict:    Max output tokens (e.g., 2000)"
+  echo "  max-context-window: Total context window size in tokens (e.g., 2048, 8192, 32768)"
+  echo "  temperature:        Sampling temperature (e.g., 0.0, 0.2, 0.7)"
+  echo "  repeat-penalty:     Repetition penalty (e.g., 1.0, 1.4, 1.6)"
+  echo "  max-output-tokens:  Max tokens in model output (e.g., 2000)"
   exit 1
 fi
 
@@ -54,10 +54,10 @@ fi
 CONFIG_JSON=""
 if [ -n "$NUM_CTX" ] || [ -n "$TEMPERATURE" ] || [ -n "$REPEAT_PENALTY" ] || [ -n "$NUM_PREDICT" ]; then
   CONFIG_PARTS=()
-  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"numCtx\": $NUM_CTX")
+  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"maxContextWindow\": $NUM_CTX")
   [ -n "$TEMPERATURE" ] && CONFIG_PARTS+=("\"temperature\": $TEMPERATURE")
   [ -n "$REPEAT_PENALTY" ] && CONFIG_PARTS+=("\"repeatPenalty\": $REPEAT_PENALTY")
-  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"numPredict\": $NUM_PREDICT")
+  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"maxOutputTokens\": $NUM_PREDICT")
 
   # Join with commas
   CONFIG_ITEMS=$(printf '%s\n' "${CONFIG_PARTS[@]}" | paste -sd ',' -)
