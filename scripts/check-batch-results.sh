@@ -17,6 +17,7 @@ PGPASSWORD='oR8tK3mP9vL2qN7xW4bZ6jH5yT1nM3s' psql \
 SELECT
   id,
   RPAD(model_name, 25) as model,
+  COALESCE(prompt_version, '-') as prompt,
   -- Key model parameters
   COALESCE((model_config->>'num_ctx')::text, '-') as context,
   COALESCE((model_config->>'temperature')::text, '-') as temp,
