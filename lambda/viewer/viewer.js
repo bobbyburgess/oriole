@@ -24,28 +24,23 @@ async function getDbPassword() {
 
 async function getColorConfig() {
   const colorParams = [
-    { key: 'background', path: '/oriole/viewer/color/background', default: '#0a0a0a' },
-    { key: 'wall', path: '/oriole/viewer/color/wall', default: '#555' },
-    { key: 'goal', path: '/oriole/viewer/color/goal', default: '#FFD700' },
-    { key: 'agent', path: '/oriole/viewer/color/agent', default: '#4CAF50' },
-    { key: 'seen', path: '/oriole/viewer/color/seen', default: 'rgba(100, 150, 255, 0.2)' },
-    { key: 'path', path: '/oriole/viewer/color/path', default: 'rgba(200, 150, 100, 0.3)' },
+    { key: 'background', path: '/oriole/viewer/color/background' },
+    { key: 'wall', path: '/oriole/viewer/color/wall' },
+    { key: 'goal', path: '/oriole/viewer/color/goal' },
+    { key: 'agent', path: '/oriole/viewer/color/agent' },
+    { key: 'seen', path: '/oriole/viewer/color/seen' },
+    { key: 'path', path: '/oriole/viewer/color/path' },
   ];
 
   const colors = {};
 
   for (const param of colorParams) {
-    try {
-      const command = new GetParameterCommand({
-        Name: param.path,
-        WithDecryption: false
-      });
-      const response = await ssmClient.send(command);
-      colors[param.key] = response.Parameter.Value;
-    } catch (error) {
-      // Use default if parameter doesn't exist
-      colors[param.key] = param.default;
-    }
+    const command = new GetParameterCommand({
+      Name: param.path,
+      WithDecryption: false
+    });
+    const response = await ssmClient.send(command);
+    colors[param.key] = response.Parameter.Value;
   }
 
   return colors;
