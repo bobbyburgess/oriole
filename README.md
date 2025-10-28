@@ -195,6 +195,28 @@ If you need to specify exact agent/alias IDs:
   [prompt-version]
 ```
 
+### Ollama Experiments (Local LLMs)
+
+Run experiments on local Ollama models with custom configuration:
+
+```bash
+# Basic usage with config (context, temperature, repeat_penalty)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 32768 0.2 1.4
+
+# Small context window (2K)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 2048 0.2 1.4
+
+# High creativity (temperature 0.7)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 32768 0.7 1.4
+
+# Run parameter sweep (12 experiments with varying configs)
+./scripts/run-parameter-sweep.sh
+```
+
+**Configuration is atomic** - passed in the event message, not Parameter Store. This prevents race conditions during parameter sweeps.
+
+See [docs/OLLAMA_INTEGRATION.md](docs/OLLAMA_INTEGRATION.md) for full setup and usage details.
+
 ### Trigger via AWS CLI (Advanced)
 
 ```bash

@@ -217,7 +217,7 @@ However, **external connections (from AWS Lambda) will work fine** even if local
 - Or test from cellular: Turn off WiFi and test from phone
 - Or use AWS Lambda test (the real use case)
 
-### 5. Store Configuration in Parameter Store
+### 5. Store Ollama Endpoint in Parameter Store
 
 ```bash
 # Ollama endpoint (HTTPS with custom port)
@@ -244,6 +244,8 @@ aws ssm put-parameter \
   --overwrite \
   --profile bobby
 ```
+
+**Note:** Model configuration (context, temperature, repeat penalty) is **NOT** stored in Parameter Store. These parameters are passed in the event for each experiment. See "Configuration: Atomic Config-in-Event Pattern" section above.
 
 ### 6. Deploy via CDK
 
@@ -287,28 +289,109 @@ Both Bedrock and Ollama use the **same tool definitions** from `lambda/shared/to
 
 This ensures **identical tool definitions** for A/B testing.
 
+## Configuration: Atomic Config-in-Event Pattern
+
+**Important:** Ollama experiments use an **atomic configuration** approach to prevent race conditions during parameter sweeps.
+
+### How It Works
+
+Configuration flows **with the event message** through the entire workflow:
+
+```
+trigger-experiment.sh → EventBridge → SQS → Lambda → Step Functions
+   (config params)         (in event)    (FIFO)  (from event)  (passes through)
+```
+
+Each experiment's config is embedded in the EventBridge event and travels atomically through the system. No shared mutable state (Parameter Store) is read at runtime.
+
+### Why Atomic Config?
+
+**Problem with Parameter Store:**
+- Parameter Store is shared mutable state across all experiments
+- When running parameter sweeps, experiments can capture the wrong config
+- Timing-dependent race conditions require magic number delays (180s+)
+
+**Solution with Event Config:**
+- Config embedded in event message (immutable, atomic)
+- Each experiment guaranteed to use exactly the config it was triggered with
+- No race conditions = can reduce delays from 180s to 5s (36x faster)
+- Perfect reproducibility
+
+### Configuration Hierarchy
+
+1. **Per-experiment config** (from event, varies per experiment):
+   - `numCtx`: Context window size (e.g., 2048, 8192, 32768)
+   - `temperature`: Sampling temperature (e.g., 0.0, 0.2, 0.5, 1.0)
+   - `repeatPenalty`: Repetition penalty (e.g., 1.0, 1.2, 1.4, 1.6)
+   - `numPredict`: Max output tokens (default: 2000)
+
+2. **System config** (from Parameter Store, stable across experiments):
+   - `recall_interval`: Moves between recall_all calls (default: 10)
+   - `max_recall_actions`: Max items returned by recall (default: 50)
+   - `max_moves`: Max actions per experiment (default: 500)
+   - `max_duration_minutes`: Timeout in minutes (default: 120)
+
+The Lambda combines both: event config for per-experiment tuning + Parameter Store for stable system settings.
+
 ## Usage
 
-### Run Ollama Experiment
+### Run Ollama Experiment with Custom Config
 
 ```bash
-# The script auto-detects Ollama models (models with ':' or known patterns)
+# With config parameters (context, temp, repeat_penalty, num_predict)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 8192 0.2 1.4 2000
+
+# Small context window (2K)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 2048 0.2 1.4
+
+# High temperature (creative)
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 32768 0.7 1.4
+
+# No repeat penalty
+./scripts/trigger-experiment.sh OLLAMA NOTUSED qwen2.5:7b 1 v1 "" 32768 0.2 1.0
+```
+
+**Parameter order:**
+```
+./scripts/trigger-experiment.sh \
+  <llm-provider> \      # "OLLAMA" (triggers Ollama path)
+  <agent-alias-id> \    # "NOTUSED" (not used for Ollama)
+  <model-name> \        # e.g., "qwen2.5:7b"
+  <maze-id> \           # e.g., 1
+  <prompt-version> \    # e.g., "v1"
+  <goal-description> \  # "" (default: "Find the goal marker")
+  [num-ctx] \           # Optional: 2048, 8192, 32768
+  [temperature] \       # Optional: 0.0-1.0
+  [repeat-penalty] \    # Optional: 1.0-2.0
+  [num-predict]         # Optional: max output tokens
+```
+
+### Run Ollama Experiment (Default Config)
+
+If you omit config parameters, the Lambda will **fail fast** and require you to provide them:
+
+```bash
+# This will FAIL - config required for Ollama
 ./scripts/trigger-by-name.sh llama3.3:70b 1 v1
-./scripts/trigger-by-name.sh qwen2.5:72b 1 v1
+# Error: "Config must be provided in event for Ollama experiments"
 ```
 
-Output:
-```
-🦙 Detected Ollama model: llama3.3:70b
-✅ Using Ollama invoke path
+**Why no fallback?** To ensure experiments are reproducible and avoid accidentally using stale Parameter Store values.
 
-Triggering experiment with:
-{
-  "llmProvider": "ollama",
-  "modelName": "llama3.3:70b",
-  "mazeId": 1
-}
+### Run Parameter Sweep
+
+The parameter sweep script passes config atomically for each experiment:
+
+```bash
+./scripts/run-parameter-sweep.sh
 ```
+
+This triggers 12 experiments with different configs:
+- **Series A**: Context window (2K, 8K, 32K)
+- **Series B**: Temperature (0.0, 0.1, 0.2, 0.5, 0.7, 1.0)
+- **Series C**: Repeat penalty (1.0, 1.2, 1.6)
+
+Each experiment receives its config in the event message - no timing dependencies or race conditions.
 
 ### Run Bedrock Experiment (for comparison)
 
@@ -318,19 +401,35 @@ Triggering experiment with:
 
 ### View Results
 
-Both write to the same database:
+Both Ollama and Bedrock write to the same database. The `model_config` JSONB column captures the full configuration for each experiment:
 
 ```sql
+-- View experiments with their config
 SELECT
   id,
   model_name,
+  model_config->>'num_ctx' as context,
+  model_config->>'temperature' as temp,
+  model_config->>'repeat_penalty' as rep_penalty,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,
   goal_found
 FROM experiments
-WHERE id >= 200
+WHERE id >= 9
 ORDER BY id DESC;
 ```
+
+**Example output:**
+```
+ id | model_name | context | temp | rep_penalty | actions | turns | goal_found
+----+------------+---------+------+-------------+---------+-------+------------
+ 12 | qwen2.5:7b | 32768   | 0.2  | 1.6         |     305 |    45 | f
+ 11 | qwen2.5:7b | 32768   | 0.2  | 1.2         |     402 |    58 | f
+ 10 | qwen2.5:7b | 32768   | 0.2  | 1.0         |     500 |    72 | f
+  9 | qwen2.5:7b | 2048    | 0.2  | 1.4         |     198 |    29 | f
+```
+
+This shows each experiment captured exactly the config it was triggered with - no config bleed between experiments.
 
 ## Model Comparison
 
