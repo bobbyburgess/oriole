@@ -129,19 +129,21 @@ exports.handler = async (event) => {
     /**
      * Capture model configuration for reproducibility and A/B testing
      *
-     * For Ollama experiments, we fetch all configurable parameters from Parameter Store
-     * and store them in the model_config JSONB column. This enables:
+     * Config is REQUIRED for ALL experiments (Ollama AND Bedrock) to ensure:
+     * - Explicit configuration (no hidden defaults)
      * - Historical comparison (e.g., before/after context window increase)
      * - A/B testing (e.g., temperature 0.2 vs 0.7)
      * - Reproducibility (know exact config that produced results)
      *
-     * For Bedrock experiments, model_config is NULL (agent config is managed separately)
+     * For Bedrock experiments, config is stored but may not affect behavior
+     * (AWS manages some settings internally), but we require it for consistency.
      */
+    if (!config || Object.keys(config).length === 0) {
+      throw new Error('Config must be provided in event for ALL experiments. Pass config parameters when triggering experiment.');
+    }
+
     let modelConfig = null;
     if (llmProvider === 'ollama') {
-      if (!config || Object.keys(config).length === 0) {
-        throw new Error('Config must be provided in event for Ollama experiments. Pass config parameters when triggering experiment.');
-      }
 
       console.log('Using Ollama config from event:', config);
 
@@ -195,7 +197,30 @@ exports.handler = async (event) => {
         max_actions_per_turn: maxActionsPerTurn,
         vision_range: visionRange
       };
-      console.log('Model config captured:', modelConfig);
+      console.log('Ollama model config captured:', modelConfig);
+    } else {
+      // Bedrock experiments: Store config for tracking but it won't affect AWS-managed settings
+      // Validate all required config fields are present
+      if (config.maxContextWindow === undefined) {
+        throw new Error('maxContextWindow must be provided in config for all experiments');
+      }
+      if (config.temperature === undefined) {
+        throw new Error('temperature must be provided in config for all experiments');
+      }
+      if (config.maxOutputTokens === undefined) {
+        throw new Error('maxOutputTokens must be provided in config for all experiments');
+      }
+      if (config.repeatPenalty === undefined) {
+        throw new Error('repeatPenalty must be provided in config for all experiments');
+      }
+
+      modelConfig = {
+        num_ctx: config.maxContextWindow,
+        temperature: config.temperature,
+        num_predict: config.maxOutputTokens,
+        repeat_penalty: config.repeatPenalty
+      };
+      console.log('Bedrock model config captured (for tracking only):', modelConfig);
     }
 
     // Create experiment record

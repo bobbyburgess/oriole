@@ -50,22 +50,26 @@ else
   LLM_PROVIDER="bedrock"
 fi
 
-# Build config JSON if parameters provided
-CONFIG_JSON=""
-if [ -n "$NUM_CTX" ] || [ -n "$TEMPERATURE" ] || [ -n "$REPEAT_PENALTY" ] || [ -n "$NUM_PREDICT" ]; then
-  CONFIG_PARTS=()
-  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"maxContextWindow\": $NUM_CTX")
-  [ -n "$TEMPERATURE" ] && CONFIG_PARTS+=("\"temperature\": $TEMPERATURE")
-  [ -n "$REPEAT_PENALTY" ] && CONFIG_PARTS+=("\"repeatPenalty\": $REPEAT_PENALTY")
-  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"maxOutputTokens\": $NUM_PREDICT")
-
-  # Join with commas
-  CONFIG_ITEMS=$(printf '%s\n' "${CONFIG_PARTS[@]}" | paste -sd ',' -)
-  CONFIG_JSON=",
-  \"config\": {
-    $CONFIG_ITEMS
-  }"
+# Require all config parameters (fail fast if missing)
+if [ -z "$NUM_CTX" ] || [ -z "$TEMPERATURE" ] || [ -z "$REPEAT_PENALTY" ] || [ -z "$NUM_PREDICT" ]; then
+  echo "ERROR: All config parameters are required!"
+  echo "  max-context-window: $NUM_CTX"
+  echo "  temperature: $TEMPERATURE"
+  echo "  repeat-penalty: $REPEAT_PENALTY"
+  echo "  max-output-tokens: $NUM_PREDICT"
+  echo ""
+  echo "You must provide ALL four parameters."
+  exit 1
 fi
+
+# Build config JSON
+CONFIG_JSON=",
+  \"config\": {
+    \"maxContextWindow\": $NUM_CTX,
+    \"temperature\": $TEMPERATURE,
+    \"repeatPenalty\": $REPEAT_PENALTY,
+    \"maxOutputTokens\": $NUM_PREDICT
+  }"
 
 # Build event detail
 if [ -n "$RESUME_FROM" ]; then
