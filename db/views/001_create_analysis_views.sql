@@ -284,6 +284,85 @@ ORDER BY date DESC;
 
 
 -- ============================================================================
+-- 8. BATCH MONITORING VIEW
+-- Real-time experiment monitoring with movement/tool use distinction
+-- Matches the output format of ./scripts/check-batch-results.sh
+-- ============================================================================
+CREATE OR REPLACE VIEW v_batch_monitor AS
+SELECT
+  e.id,
+  e.model_name,
+  COALESCE(e.prompt_version, '-') AS prompt_version,
+
+  -- Movement counts (actual footsteps)
+  (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = true) AS successful_moves,
+  (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = false) AS failed_moves,
+  (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%') AS total_move_attempts,
+
+  -- Non-movement tool uses
+  (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type NOT LIKE 'move_%') AS tool_uses,
+
+  -- Total actions and turns
+  (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id) AS total_actions,
+  (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) AS total_turns,
+
+  -- Token usage
+  COALESCE(
+    (SELECT SUM(input_tokens) FROM agent_actions WHERE experiment_id = e.id),
+    0
+  ) AS total_input_tokens,
+  COALESCE(
+    (SELECT SUM(output_tokens) FROM agent_actions WHERE experiment_id = e.id),
+    0
+  ) AS total_output_tokens,
+
+  -- Progress and timing
+  CASE
+    WHEN e.goal_found THEN 100.0
+    WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) IS NULL THEN 0.0
+    ELSE LEAST(
+      100.0,
+      ((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) * 100.0) /
+      COALESCE(
+        (e.model_config->>'max_moves')::numeric,
+        500
+      )
+    )
+  END AS progress_pct,
+
+  ROUND(
+    EXTRACT(EPOCH FROM (COALESCE(e.completed_at, NOW()) - e.started_at)) / 60.0,
+    1
+  ) AS duration_minutes,
+
+  CASE
+    WHEN e.goal_found OR e.failure_reason IS NOT NULL THEN NULL
+    WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) = 0 THEN NULL
+    ELSE ROUND(
+      (
+        EXTRACT(EPOCH FROM (NOW() - e.started_at)) / 60.0 /
+        (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id)
+      ) *
+      (
+        COALESCE((e.model_config->>'max_moves')::numeric, 500) -
+        (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id)
+      ),
+      1
+    )
+  END AS eta_minutes,
+
+  -- Status
+  CASE
+    WHEN e.goal_found THEN '✓ GOAL'
+    WHEN e.failure_reason IS NOT NULL THEN '✗ FAIL'
+    ELSE '▶ RUN'
+  END AS status
+
+FROM experiments e
+ORDER BY e.id DESC;
+
+
+-- ============================================================================
 -- USAGE EXAMPLES
 -- ============================================================================
 
