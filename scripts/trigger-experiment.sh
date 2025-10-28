@@ -76,7 +76,6 @@ if [ -n "$RESUME_FROM" ]; then
   "modelName": "$MODEL_NAME",
   "promptVersion": "$PROMPT_VERSION",
   "mazeId": $MAZE_ID,
-  "goalDescription": "Find the goal marker",
   "startX": 2,
   "startY": 2,
   "resumeFromExperimentId": $RESUME_FROM,
@@ -92,7 +91,6 @@ else
   "modelName": "$MODEL_NAME",
   "promptVersion": "$PROMPT_VERSION",
   "mazeId": $MAZE_ID,
-  "goalDescription": "Find the goal marker",
   "startX": 2,
   "startY": 2,
   "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON

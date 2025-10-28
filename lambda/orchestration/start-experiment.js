@@ -103,7 +103,6 @@ exports.handler = async (event) => {
       modelName,
       promptVersion = 'v1',
       mazeId,
-      goalDescription = 'Find the goal marker',
       resumeFromExperimentId,
       llmProvider = 'bedrock',  // Default to bedrock for backwards compatibility
       config  // Ollama config passed in event (atomic!)
@@ -189,10 +188,10 @@ exports.handler = async (event) => {
     const db = await getDbClient();
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, maze_id, goal_description, start_x, start_y, started_at, model_config)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+       (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at, model_config)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
        RETURNING id`,
-      [agentId, modelName, promptVersion, mazeId, goalDescription, startX, startY,
+      [agentId, modelName, promptVersion, mazeId, startX, startY,
        modelConfig ? JSON.stringify(modelConfig) : null]
     );
 
@@ -207,7 +206,6 @@ exports.handler = async (event) => {
       modelName,
       promptVersion,
       mazeId,
-      goalDescription,
       startX,
       startY,
       currentX: startX,  // Initial position = start position
