@@ -1,10 +1,10 @@
 // Check Progress Lambda
 // Invoked between each agent iteration in the Step Functions loop
 // Responsibilities:
-// 1. Count total actions taken so far (from agent_actions table)
+// 1. Count successful footsteps taken so far (successful move actions only)
 // 2. Check if experiment should continue based on:
 //    - Goal found (success flag set)
-//    - Max moves reached (from /oriole/max-moves)
+//    - Max footsteps reached (from /oriole/max-moves)
 //    - Max duration exceeded (from /oriole/max-duration-minutes)
 // 3. Fetch current position from DB (critical for stateless orchestration)
 // 4. Pass all state forward to next step (invoke-agent or finalize)
@@ -171,11 +171,15 @@ exports.handler = async (event) => {
     // This is the source of truth for per-turn token tracking
     await updateTurnTokens(experimentId, turnNumber, invocationTokensIn, invocationTokensOut);
 
-    // Count actual actions from agent_actions table
-    // Note: experiments.total_moves is only updated at finalization
-    // We count ALL actions here (moves + recalls) since they both consume agent turns
+    // Count successful footsteps (successful move actions only)
+    // This determines when to stop the experiment based on exploration budget
+    // Failed moves and tool uses don't count against the max_moves limit
     const movesResult = await db.query(
-      'SELECT COUNT(*) as move_count FROM agent_actions WHERE experiment_id = $1',
+      `SELECT COUNT(*) as move_count
+       FROM agent_actions
+       WHERE experiment_id = $1
+       AND action_type LIKE 'move_%'
+       AND success = true`,
       [experimentId]
     );
     const totalMoves = parseInt(movesResult.rows[0].move_count);
@@ -184,13 +188,13 @@ exports.handler = async (event) => {
     const now = new Date();
     const elapsedMinutes = (now - startedAt) / 1000 / 60;
 
-    console.log(`Experiment ${experimentId}: ${totalMoves}/${maxMoves} moves, ${elapsedMinutes.toFixed(1)}/${maxDurationMinutes} minutes, goal_found: ${goalFound}`);
+    console.log(`Experiment ${experimentId}: ${totalMoves}/${maxMoves} footsteps, ${elapsedMinutes.toFixed(1)}/${maxDurationMinutes} minutes, goal_found: ${goalFound}`);
     console.log(`Cumulative tokens: ${cumulativeInputTokens} in, ${cumulativeOutputTokens} out, $${cumulativeCost.toFixed(6)} total cost`);
 
     // Determine if we should continue
-    // Stop if: goal found OR max moves reached OR max duration exceeded
-    // Note: We check move count BETWEEN turns, so experiments can overshoot max_moves
-    // Example: If at 96 moves and agent makes 8 tool calls in one turn, final count = 104
+    // Stop if: goal found OR max footsteps reached OR max duration exceeded
+    // Note: We check footstep count BETWEEN turns, so experiments can slightly overshoot max_moves
+    // Example: If at 498 footsteps and agent makes 5 successful moves in one turn, final count = 503
     const shouldContinue = !goalFound && totalMoves < maxMoves && elapsedMinutes < maxDurationMinutes;
 
     let stopReason = null;
