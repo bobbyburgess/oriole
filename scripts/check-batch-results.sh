@@ -24,14 +24,22 @@ SELECT
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true) as moves,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,
-  -- Token usage
-  COALESCE(TO_CHAR((SELECT SUM(input_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_in,
-  COALESCE(TO_CHAR((SELECT SUM(output_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_out,
   ROUND(
     (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
     NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
     1
   ) as avg_per_turn,
+  (SELECT MAX(action_count)
+   FROM (
+     SELECT COUNT(*) as action_count
+     FROM agent_actions
+     WHERE experiment_id = experiments.id
+     GROUP BY turn_number
+   ) turn_counts
+  ) as max_per_turn,
+  -- Token usage
+  COALESCE(TO_CHAR((SELECT SUM(input_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_in,
+  COALESCE(TO_CHAR((SELECT SUM(output_tokens) FROM agent_actions WHERE experiment_id = experiments.id), 'FM999,999,999'), '-') as tokens_out,
   ROUND(
     (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
     NULLIF(EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) / 60.0, 0),
