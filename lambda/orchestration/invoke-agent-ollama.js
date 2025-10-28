@@ -117,6 +117,19 @@ async function getOllamaApiKey() {
   return response.Parameter.Value;
 }
 
+async function getOllamaRequestTimeout() {
+  try {
+    const command = new GetParameterCommand({
+      Name: '/oriole/ollama/request-timeout-ms'
+    });
+    const response = await ssmClient.send(command);
+    return parseInt(response.Parameter.Value, 10);
+  } catch (error) {
+    console.warn('Failed to load request-timeout-ms from Parameter Store, using default of 120000ms:', error.message);
+    return 120000; // 2 minutes default
+  }
+}
+
 /**
  * Call Ollama chat API with function calling support
  *
@@ -129,9 +142,10 @@ async function getOllamaApiKey() {
  * @param {string} apiKey - API key for auth proxy
  * @param {Array} tools - Tool definitions in OpenAI format
  * @param {Object} options - Model options (temperature, num_ctx, etc.)
+ * @param {number} timeoutMs - Request timeout in milliseconds
  * @returns {Promise} Ollama response with potential tool_calls
  */
-async function callOllamaChat(endpoint, model, messages, apiKey, tools, options) {
+async function callOllamaChat(endpoint, model, messages, apiKey, tools, options, timeoutMs) {
   return new Promise((resolve, reject) => {
     const url = new URL(`${endpoint}/api/chat`);
     const postData = JSON.stringify({
@@ -165,7 +179,7 @@ async function callOllamaChat(endpoint, model, messages, apiKey, tools, options)
     });
 
     req.on('error', reject);
-    req.setTimeout(120000); // 2 minute timeout
+    req.setTimeout(timeoutMs);
     req.write(postData);
     req.end();
   });
@@ -256,12 +270,14 @@ ${promptText}
 
 Use the provided tools to navigate and explore. You will receive vision feedback after each move showing what you can see from your new position.`;
 
-    // Get Ollama endpoint, API key, and model options
+    // Get Ollama endpoint, API key, model options, and request timeout
     const endpoint = await getOllamaEndpoint();
     const apiKey = await getOllamaApiKey();
     const modelOptions = await getOllamaOptions(config);  // Pass config from event
+    const requestTimeoutMs = await getOllamaRequestTimeout();
     console.log(`Ollama endpoint: ${endpoint}`);
     console.log(`Model options:`, modelOptions);
+    console.log(`Request timeout: ${requestTimeoutMs}ms`);
 
     // Get tools from shared definitions (same as Bedrock Agent)
     const tools = getOllamaTools();
@@ -290,7 +306,7 @@ Use the provided tools to navigate and explore. You will receive vision feedback
       const startTime = Date.now();
 
       // Call Ollama with conversation history and available tools
-      const response = await callOllamaChat(endpoint, modelName, messages, apiKey, tools, modelOptions);
+      const response = await callOllamaChat(endpoint, modelName, messages, apiKey, tools, modelOptions, requestTimeoutMs);
 
       const elapsed = Date.now() - startTime;
       console.log(`[TIMING] Ollama call completed in ${elapsed}ms`);
