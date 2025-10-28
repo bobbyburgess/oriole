@@ -672,6 +672,13 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed monitoring w
 - [ ] Real-time experiment streaming
 - [ ] Model fine-tuning based on results
 
+## Documentation
+
+- **[OLLAMA_INTEGRATION.md](docs/OLLAMA_INTEGRATION.md)** - Complete guide to using local Ollama models
+- **[PROMPT_VERSIONING.md](docs/PROMPT_VERSIONING.md)** - Managing and versioning prompts for experiments
+- **[QUICKSIGHT_SETUP.md](docs/QUICKSIGHT_SETUP.md)** - Setting up analytics dashboards
+- **[LOAD_BALANCING.md](docs/LOAD_BALANCING.md)** - Understanding the FIFO queue strategy
+
 ## License
 
 ISC

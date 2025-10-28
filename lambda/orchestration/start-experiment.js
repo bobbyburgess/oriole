@@ -147,7 +147,7 @@ exports.handler = async (event) => {
       console.log('Using Ollama config from event:', config);
 
       // Fetch non-model params from Parameter Store (these don't change per-experiment)
-      const [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes] = await Promise.all([
+      const [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange] = await Promise.all([
         ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
           .then(r => parseInt(r.Parameter.Value))
           .catch(err => { console.warn('Failed to read /oriole/experiments/recall-interval:', err.message); return null; }),
@@ -159,7 +159,13 @@ exports.handler = async (event) => {
           .catch(err => { console.warn('Failed to read /oriole/max-moves:', err.message); return null; }),
         ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
           .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; })
+          .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; }),
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/max-actions-per-turn' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/ollama/max-actions-per-turn:', err.message); return null; }),
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/gameplay/vision-range' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/gameplay/vision-range:', err.message); return null; })
       ]);
 
       modelConfig = {
@@ -172,7 +178,9 @@ exports.handler = async (event) => {
         recall_interval: recallInterval,
         max_recall_actions: maxRecallActions,
         max_moves: maxMoves,
-        max_duration_minutes: maxDurationMinutes
+        max_duration_minutes: maxDurationMinutes,
+        max_actions_per_turn: maxActionsPerTurn,
+        vision_range: visionRange
       };
       console.log('Model config captured:', modelConfig);
     }
