@@ -29,6 +29,7 @@ async function getColorConfig() {
     { key: 'goal', path: '/oriole/viewer/color/goal', default: '#FFD700' },
     { key: 'agent', path: '/oriole/viewer/color/agent', default: '#4CAF50' },
     { key: 'seen', path: '/oriole/viewer/color/seen', default: 'rgba(100, 150, 255, 0.2)' },
+    { key: 'path', path: '/oriole/viewer/color/path', default: 'rgba(200, 150, 100, 0.3)' },
   ];
 
   const colors = {};
@@ -438,8 +439,8 @@ function getViewerHTML(colors) {
         <button onclick="toggleAutoplay()" id="playBtn">▶ Play</button>
         <div id="speed-control">
           <label for="speedDial">Speed:</label>
-          <input type="number" id="speedDial" min="10" max="5000" step="10" value="500" />
-          <span>ms</span>
+          <input type="number" id="speedDial" min="1" max="240" step="10" value="60" />
+          <span>FPS</span>
         </div>
       </div>
 
@@ -492,6 +493,7 @@ function getViewerHTML(colors) {
      * - goal: Goal position(s) the agent must reach
      * - agent: Current agent position
      * - seen: Transparent overlay for tiles the agent has observed
+     * - path: Path history trail showing previously visited cells
      */
     const COLORS = ${JSON.stringify(colors)};
 
@@ -738,10 +740,17 @@ function getViewerHTML(colors) {
       detectRefreshRate().then(({ fps, frameTime }) => {
         const refreshRateInfo = document.getElementById('refreshRateInfo');
         refreshRateInfo.textContent = \`Display: \${fps} Hz (\${frameTime.toFixed(1)}ms per frame)\`;
-        refreshRateInfo.title = \`Your monitor refreshes at \${fps} frames per second. Playback faster than \${Math.ceil(frameTime)}ms won't look smoother.\`;
+        refreshRateInfo.title = \`Your monitor refreshes at \${fps} frames per second.\`;
+
+        // Auto-populate speed dial with detected refresh rate
+        const speedDial = document.getElementById('speedDial');
+        speedDial.value = fps;
+        speedDial.max = Math.max(240, fps); // Allow going above detected rate if needed
+        console.log(\`Speed control initialized to \${fps} FPS (your display's refresh rate)\`);
       }).catch(err => {
         console.warn('Failed to detect refresh rate:', err);
         document.getElementById('refreshRateInfo').textContent = 'Display: Unable to detect';
+        // Keep default 60 FPS if detection fails
       });
     }
 
@@ -1060,8 +1069,8 @@ function getViewerHTML(colors) {
           }
         }
 
-        // Draw path with subtle brown/tan overlay
-        ctx.fillStyle = 'rgba(200, 150, 100, 0.3)';
+        // Draw path history overlay
+        ctx.fillStyle = COLORS.path;
         for (const pos of visitedPositions) {
           const [x, y] = pos.split(',').map(Number);
           ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
@@ -1193,7 +1202,8 @@ function getViewerHTML(colors) {
      * Starts or stops automatic advancement through actions.
      *
      * When starting autoplay:
-     * - Reads speed from speedDial input (milliseconds per step)
+     * - Reads speed from speedDial input (in FPS/Hz)
+     * - Converts FPS to milliseconds per frame (ms = 1000 / fps)
      * - Creates interval that calls stepForward() repeatedly
      * - Updates button text to "⏸ Pause"
      * - Auto-stops when reaching final action
@@ -1203,8 +1213,9 @@ function getViewerHTML(colors) {
      * - Updates button text to "▶ Play"
      * - Preserves current position (does not reset to step 0)
      *
-     * Speed dial range: 10ms (very fast, for long runs) to 5000ms (slow, for examination)
-     * Default: 500ms per step if speedDial value is invalid
+     * Speed dial range: 1 FPS (very slow) to 240+ FPS (very fast, matches high-refresh displays)
+     * Default: 60 FPS if speedDial value is invalid
+     * Auto-populated with detected display refresh rate on page load
      */
     function toggleAutoplay() {
       if (autoplayInterval) {
@@ -1214,14 +1225,17 @@ function getViewerHTML(colors) {
         document.getElementById('playBtn').textContent = '▶ Play';
       } else {
         // Start autoplay
-        const speed = parseInt(document.getElementById('speedDial').value) || 500;
+        const fps = parseInt(document.getElementById('speedDial').value) || 60;
+        const intervalMs = Math.round(1000 / fps); // Convert FPS to milliseconds
+        console.log(\`Starting playback at \${fps} FPS (\${intervalMs}ms per frame)\`);
+
         autoplayInterval = setInterval(() => {
           stepForward();
           // Auto-stop when reaching end of actions
           if (currentStep === experimentData.actions.length - 1) {
             toggleAutoplay();
           }
-        }, speed);
+        }, intervalMs);
         document.getElementById('playBtn').textContent = '⏸ Pause';
       }
     }
