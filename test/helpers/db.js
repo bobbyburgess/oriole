@@ -78,7 +78,7 @@ async function getExperimentStats(experimentId) {
         COUNT(*) FILTER (WHERE action_type LIKE 'move_%') as move_attempts,
         COUNT(*) FILTER (WHERE action_type LIKE 'move_%' AND agent_actions.success) as successful_moves,
         COUNT(*) FILTER (WHERE action_type LIKE 'move_%' AND NOT agent_actions.success) as failed_moves,
-        COUNT(*) FILTER (WHERE action_type = 'recall_all') as recall_count,
+        COUNT(*) FILTER (WHERE action_type LIKE 'recall_last_%') as recall_count,
         MAX(turn_number) as max_turn,
         experiments.success as completed_successfully
       FROM agent_actions

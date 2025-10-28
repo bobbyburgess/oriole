@@ -51,13 +51,14 @@ const GOAL = 2;
  * @param {number} x - Agent x position (column)
  * @param {number} y - Agent y position (row)
  * @param {boolean} seeThroughWalls - Whether walls block vision (default: false)
+ * @param {number} visionRangeOverride - Override vision range for testing (optional)
  * @returns {Object} Map of visible tiles {"x,y": tileType}
  */
-async function calculateVision(grid, x, y, seeThroughWalls = false) {
+async function calculateVision(grid, x, y, seeThroughWalls = false, visionRangeOverride = null) {
   const visible = {};
   const height = grid.length;
   const width = grid[0].length;
-  const visionRange = await getVisionRange();
+  const visionRange = visionRangeOverride !== null ? visionRangeOverride : await getVisionRange();
 
   // Agent always sees the tile they're standing on
   visible[`${x},${y}`] = grid[y][x];
