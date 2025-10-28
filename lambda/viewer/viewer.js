@@ -105,29 +105,42 @@ exports.handler = async (event) => {
       const db = await getDbClient();
 
       const result = await db.query(
-        `SELECT id, model_name, goal_found, started_at, completed_at,
-                CASE
-                  WHEN failure_reason IS NULL THEN NULL
-                  WHEN failure_reason::text ~ '^\\s*\\{' THEN failure_reason::json->>'errorType'
-                  ELSE failure_reason::text
-                END as error_type,
-                CASE
-                  WHEN completed_at IS NOT NULL THEN 'completed'
-                  WHEN NOT EXISTS (
-                    SELECT 1 FROM agent_actions
-                    WHERE experiment_id = experiments.id
-                    AND timestamp > NOW() - INTERVAL '5 minutes'
-                  ) THEN 'stale'
-                  ELSE 'running'
-                END as status
-         FROM experiments
-         WHERE completed_at IS NOT NULL
+        `SELECT
+          e.id,
+          e.model_name,
+          e.goal_found,
+          e.started_at,
+          e.completed_at,
+          CASE
+            WHEN e.failure_reason IS NULL THEN NULL
+            WHEN e.failure_reason::text ~ '^\\s*\\{' THEN e.failure_reason::json->>'errorType'
+            ELSE e.failure_reason::text
+          END as error_type,
+          CASE
+            WHEN e.completed_at IS NOT NULL THEN 'completed'
+            WHEN NOT EXISTS (
+              SELECT 1 FROM agent_actions
+              WHERE experiment_id = e.id
+              AND timestamp > NOW() - INTERVAL '5 minutes'
+            ) THEN 'stale'
+            ELSE 'running'
+          END as status,
+          COALESCE(
+            (SELECT COUNT(*)
+             FROM agent_actions
+             WHERE experiment_id = e.id
+             AND to_x IS NOT NULL
+             AND to_y IS NOT NULL),
+            0
+          ) as step_count
+         FROM experiments e
+         WHERE e.completed_at IS NOT NULL
             OR NOT EXISTS (
               SELECT 1 FROM agent_actions
-              WHERE experiment_id = experiments.id
+              WHERE experiment_id = e.id
               AND timestamp > NOW() - INTERVAL '5 minutes'
             )
-         ORDER BY id DESC
+         ORDER BY e.id DESC
          LIMIT 100`
       );
 
@@ -797,17 +810,19 @@ function getViewerHTML(colors) {
 
           // Determine display text and style based on experiment outcome
           let displayText, className;
+          const stepCountText = exp.step_count !== undefined ? \` (\${exp.step_count} steps)\` : '';
+
           if (exp.error_type) {
             // Failed experiment (e.g., ThrottlingException)
-            displayText = \`\${exp.id} - \${exp.model_name} ⚠ \${exp.error_type}\`;
+            displayText = \`\${exp.id} - \${exp.model_name} ⚠ \${exp.error_type}\${stepCountText}\`;
             className = 'throttled';
           } else if (exp.goal_found) {
             // Successfully found the goal
-            displayText = \`\${exp.id} - \${exp.model_name} ✓\`;
+            displayText = \`\${exp.id} - \${exp.model_name} ✓\${stepCountText}\`;
             className = 'success';
           } else {
             // Completed but didn't find goal
-            displayText = \`\${exp.id} - \${exp.model_name} ✗\`;
+            displayText = \`\${exp.id} - \${exp.model_name} ✗\${stepCountText}\`;
             className = 'failure';
           }
 
