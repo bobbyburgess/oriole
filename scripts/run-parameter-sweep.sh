@@ -25,8 +25,8 @@ echo "Model: $MODEL"
 echo "Maze: #$MAZE_ID (60x60 grid)"
 echo "Max moves: 500 (from Parameter Store)"
 echo ""
-echo "⚠️  This will run 12 experiments sequentially"
-echo "⏱️  Estimated time: ~3.2 hours"
+echo "⚠️  This will run 12 experiments sequentially (with 180s isolation delays)"
+echo "⏱️  Estimated time: ~3.75 hours (3.2h experiments + 33m delays)"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
@@ -59,8 +59,19 @@ run_experiment() {
   echo "✅ Experiment $series started"
   echo ""
 
-  # Small delay to ensure experiments start sequentially
-  sleep 5
+  # Delay to ensure:
+  # 1. Previous experiment has fully started and captured its parameters from Parameter Store
+  # 2. Parameter Store changes propagate to new Lambda invocations
+  # 3. No race conditions between parameter updates and experiment starts
+  #
+  # Conservative 180s delay accounts for:
+  # - EventBridge propagation (~5s)
+  # - SQS long polling (~20s)
+  # - Lambda cold start (~5s)
+  # - start-experiment execution (~10s)
+  # - Safety margin (~140s)
+  echo "⏳ Waiting 180 seconds before next experiment (ensures parameter isolation)..."
+  sleep 180
 }
 
 # ========================================
@@ -116,7 +127,7 @@ echo ""
 echo "📊 Monitor progress with:"
 echo "   watch -n 5 ./scripts/check-batch-results.sh 1"
 echo ""
-echo "Expected completion: ~3.2 hours from now"
+echo "Expected completion: ~3.75 hours from now"
 echo ""
 echo "Experiment IDs should be: 1-12"
 echo ""
