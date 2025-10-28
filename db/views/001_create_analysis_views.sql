@@ -317,18 +317,21 @@ SELECT
   ) AS total_output_tokens,
 
   -- Progress and timing
-  CASE
-    WHEN e.goal_found THEN 100.0
-    WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) IS NULL THEN 0.0
-    ELSE LEAST(
-      100.0,
-      ((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) * 100.0) /
-      COALESCE(
-        (e.model_config->>'max_moves')::numeric,
-        500
+  ROUND(
+    CASE
+      WHEN e.goal_found THEN 100.0
+      WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) IS NULL THEN 0.0
+      ELSE LEAST(
+        100.0,
+        ((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) * 100.0) /
+        COALESCE(
+          (e.model_config->>'max_moves')::numeric,
+          500
+        )
       )
-    )
-  END AS progress_pct,
+    END,
+    2
+  ) AS progress_pct,
 
   ROUND(
     EXTRACT(EPOCH FROM (COALESCE(e.completed_at, NOW()) - e.started_at)) / 60.0,
