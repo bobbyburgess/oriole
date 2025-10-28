@@ -316,22 +316,21 @@ SELECT
     0
   ) AS total_output_tokens,
 
-  -- Progress and timing
-  ROUND(
-    CASE
-      WHEN e.goal_found THEN 100.0
-      WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) IS NULL THEN 0.0
-      ELSE LEAST(
+  -- Progress and timing (NULL when completed/failed, based on footsteps when running)
+  CASE
+    WHEN e.goal_found OR e.failure_reason IS NOT NULL THEN NULL
+    ELSE ROUND(
+      LEAST(
         100.0,
-        ((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) * 100.0) /
+        ((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = true) * 100.0) /
         COALESCE(
           (e.model_config->>'max_moves')::numeric,
           500
         )
-      )
-    END,
-    2
-  ) AS progress_pct,
+      ),
+      2
+    )
+  END AS progress_pct,
 
   ROUND(
     EXTRACT(EPOCH FROM (COALESCE(e.completed_at, NOW()) - e.started_at)) / 60.0,
@@ -340,15 +339,15 @@ SELECT
 
   CASE
     WHEN e.goal_found OR e.failure_reason IS NOT NULL THEN NULL
-    WHEN (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id) = 0 THEN NULL
+    WHEN (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = true) = 0 THEN NULL
     ELSE ROUND(
       (
         EXTRACT(EPOCH FROM (NOW() - e.started_at)) / 60.0 /
-        (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id)
+        (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = true)
       ) *
       (
         COALESCE((e.model_config->>'max_moves')::numeric, 500) -
-        (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = e.id)
+        (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = e.id AND action_type LIKE 'move_%' AND success = true)
       ),
       1
     )
