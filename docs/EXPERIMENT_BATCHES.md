@@ -2,6 +2,65 @@
 
 Record of major experiment batches run in the Oriole maze navigation system.
 
+## Batch 5: qwen2.5:7b Deep Dive with 2000-Step Limit (Oct 28, 2025 - 1:30 AM)
+
+**Objective:** Test qwen2.5:7b with 4x increased action limit and new v6 prompt
+
+### Motivation
+
+Previous batches (1-4) analysis revealed:
+- **qwen2.5:7b is the best navigator** (99 unique positions, thoughtful reasoning)
+- **Zero successes at 500 steps** - all experiments hit action limit
+- **v5 prompt had best exploration** but was verbose (131 words)
+- Need to test if 2000 steps enables goal discovery
+
+### Configuration Changes
+
+- **max_moves**: 250/500 → **2000** (4x-8x increase)
+- **New v6 prompt**: 62 words (52% shorter than v5, adds wall-learning vs v1)
+
+### v6 Prompt Design
+
+**Philosophy:** Combine v1's conciseness with v5's key insight (wall persistence)
+
+**Text (62 words):**
+```
+You are navigating a 60x60 grid maze to find the GOAL marker.
+You can see 3 tiles in each cardinal direction (walls block vision).
+
+Movement: move_north, move_south, move_east, move_west (one tile at a time).
+Important: Failed moves indicate walls. Walls never change, so avoid retrying failed moves.
+
+Memory: Use recall_all to retrieve all previously seen tiles when you need to plan strategically.
+```
+
+**vs v5 (131 words):** Removed coordinate system lectures, section headers, verbose explanations
+**vs v1 (104 words):** Added wall persistence hint, recall_all guidance
+
+### Phase 1: Prompt Comparison
+
+| Exp # | Model | Prompt | Config | Hypothesis |
+|-------|-------|--------|--------|------------|
+| 36 | qwen2.5:7b | v6 (new) | ctx=32K, temp=0.1, rep_pen=1.4 | Optimal balance: concise + smart |
+| 37 | qwen2.5:7b | v1 | ctx=32K, temp=0.1, rep_pen=1.4 | Baseline comparison |
+| 38 | qwen2.5:7b | v5 | ctx=32K, temp=0.1, rep_pen=1.4 | Best from Batch 3 (99 unique pos) |
+
+**Success Criteria:**
+- Primary: Goal found (yes/no)
+- Secondary: Unique positions visited, fail rate, reasoning quality
+
+### Future Phases (Pending Phase 1 Results)
+
+**Phase 2: Repeat Penalty Sweep (best prompt)**
+- 1.0, 1.2, 1.6 (test anti-repetition effects)
+
+**Phase 3: Temperature Fine-Tuning (best config)**
+- 0.0, 0.05 (test pure greedy vs minimal exploration)
+
+**Total planned:** 8 experiments across 3 phases
+
+---
+
 ## Batch 4: Llama Models with Reduced Action Limit (Oct 28, 2025 - 12:30 AM)
 
 **Objective:** Test Llama models with 250-step limit (half of previous 500)
