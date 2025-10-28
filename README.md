@@ -440,12 +440,32 @@ aws ssm put-parameter --name /oriole/experiments/recall-interval \
 ```bash
 # Maximum actions per experiment
 aws ssm put-parameter --name /oriole/experiments/max-moves \
-  --value "100" --type String --overwrite
+  --value "500" --type String --overwrite
 
 # Maximum duration in minutes
 aws ssm put-parameter --name /oriole/experiments/max-duration-minutes \
-  --value "30" --type String --overwrite
+  --value "120" --type String --overwrite
 ```
+
+### Ollama-Specific Parameters
+
+```bash
+# Maximum actions per turn (Ollama orchestration loop)
+# Controls how many tool calls Ollama makes before returning to Step Functions
+# Higher = more natural exploration, fewer turns
+# Lower = more fragmented behavior, more turns
+# Current recommendation: 50
+# Previous default: 8 (too restrictive)
+# Special value 0 = unlimited (for local testing)
+aws ssm put-parameter --name /oriole/ollama/max-actions-per-turn \
+  --value "50" --type String --overwrite
+```
+
+**Impact on Experiment Behavior:**
+- **maxActions=8**: 500 actions might require ~131 turns (short bursts)
+- **maxActions=50**: 500 actions might require ~33 turns (longer sequences)
+- Higher values allow agent to execute more complex multi-step plans
+- See [OLLAMA_INTEGRATION.md](docs/OLLAMA_INTEGRATION.md) for details
 
 ### Rate Limiting (No Redeployment Required)
 

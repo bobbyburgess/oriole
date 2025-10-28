@@ -20,10 +20,10 @@ const { getOllamaTools } = require('../shared/tools');
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
 
-// Cache prompts and system config to avoid repeated SSM calls
-// Note: Model options are NOT cached to avoid config pollution between experiments
+// Cache prompts to avoid repeated SSM calls
+// Note: Model options and maxActionsPerTurn are NOT cached to avoid stale values
+// when parameters are updated in Parameter Store
 const promptCache = {};
-let cachedMaxActionsPerTurn = null;
 
 async function getPrompt(promptVersion) {
   if (promptCache[promptVersion]) {
@@ -49,13 +49,10 @@ async function getPrompt(promptVersion) {
  * - 0 = Unlimited actions (useful for free local Ollama)
  * - N > 0 = Limit to N actions per turn
  *
- * Cached across warm Lambda invocations for performance.
+ * NOT cached - fetches from Parameter Store every time to ensure
+ * parameter updates take effect immediately (even on warm containers).
  */
 async function getMaxActionsPerTurn() {
-  if (cachedMaxActionsPerTurn !== null) {
-    return cachedMaxActionsPerTurn;
-  }
-
   try {
     const command = new GetParameterCommand({
       Name: '/oriole/ollama/max-actions-per-turn'
@@ -64,10 +61,10 @@ async function getMaxActionsPerTurn() {
     const value = parseInt(response.Parameter.Value, 10);
 
     // 0 means unlimited - use Infinity for loop checks
-    cachedMaxActionsPerTurn = value === 0 ? Infinity : value;
+    const maxActions = value === 0 ? Infinity : value;
 
-    console.log(`Max actions per turn loaded from Parameter Store: ${value === 0 ? 'unlimited' : value}`);
-    return cachedMaxActionsPerTurn;
+    console.log(`Max actions per turn: ${value === 0 ? 'unlimited' : value}`);
+    return maxActions;
   } catch (error) {
     console.warn('Failed to load max-actions-per-turn from Parameter Store, using default of 50:', error.message);
     return 50; // Fallback to generous default

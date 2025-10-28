@@ -247,6 +247,26 @@ aws ssm put-parameter \
 
 **Note:** Model configuration (context, temperature, repeat penalty) is **NOT** stored in Parameter Store. These parameters are passed in the event for each experiment. See "Configuration: Atomic Config-in-Event Pattern" section above.
 
+**Important:** Also configure the max actions per turn limit:
+
+```bash
+# Max actions Ollama can take in a single turn before returning to orchestration loop
+# Recommended: 50 (allows longer exploration sequences)
+# Previous: 8 (too restrictive, caused excessive turn fragmentation)
+# Special: 0 = unlimited (useful for local testing)
+aws ssm put-parameter \
+  --name /oriole/ollama/max-actions-per-turn \
+  --value "50" \
+  --type String \
+  --overwrite \
+  --profile bobby
+```
+
+**Why This Matters:**
+- **maxActions=8**: Agent forced to return after 8 tool calls → many short turns → fragmented exploration
+- **maxActions=50**: Agent can execute longer sequences → fewer turns → more natural behavior
+- Example: Same 500 actions might take 131 turns (limit=8) vs 33 turns (limit=50)
+
 ### 6. Deploy via CDK
 
 The Ollama Lambda is already defined in the CDK stack:
