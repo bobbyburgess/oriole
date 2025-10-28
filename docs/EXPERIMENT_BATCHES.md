@@ -2,6 +2,49 @@
 
 Record of major experiment batches run in the Oriole maze navigation system.
 
+## Batch 4: Llama Models with Reduced Action Limit (Oct 28, 2025 - 12:30 AM)
+
+**Objective:** Test Llama models with 250-step limit (half of previous 500)
+
+### Motivation
+
+Batch 1-3 results showed:
+- **Zero successes** at 500-step limit
+- All experiments hit max actions without finding goal
+- Need to test if models can succeed with tighter constraints
+- Hypothesis: Shorter limit may force more efficient exploration
+
+### Configuration Changes
+
+- **max_moves**: 500 → **250** (50% reduction)
+- All other params unchanged from Batch 3 optimal config
+
+### Models Tested
+
+| Exp # | Model | Prompt | Config |
+|-------|-------|--------|--------|
+| 32 | llama3.2:3b | v1 | ctx=32K, temp=0.1, rep_pen=1.4 |
+| 33 | llama3.2:3b | v5 | ctx=32K, temp=0.1, rep_pen=1.4 |
+| 34 | llama3.1:8b | v1 | ctx=32K, temp=0.1, rep_pen=1.4 |
+| 35 | llama3.1:8b | v5 | ctx=32K, temp=0.1, rep_pen=1.4 |
+
+**Total:** 4 experiments
+
+### Hypotheses
+
+1. **Lower limit forces efficiency:** Models may navigate more purposefully
+2. **Small models suffer:** 3b model lacks capacity for strategic planning
+3. **Prompt matters more:** With less room for error, v5's detail helps
+4. **Still too hard:** Even 250 steps insufficient for blind 60×60 exploration
+
+### Expected Outcomes
+
+**Pessimistic:** All 4 fail to find goal (limit still too low)
+**Realistic:** 0-1 successes (lucky initial direction)
+**Optimistic:** 2+ successes (models adapt strategy under constraint)
+
+---
+
 ## Batch 3: Multi-Model Comparison (Oct 27, 2025 - 11:08 PM)
 
 **Objective:** Compare 6 different LLM architectures across 2 prompt styles
