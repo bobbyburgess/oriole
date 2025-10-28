@@ -20,9 +20,9 @@ const { getOllamaTools } = require('../shared/tools');
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
 
-// Cache prompts and model options to avoid repeated SSM calls
+// Cache prompts to avoid repeated SSM calls
+// Note: Model options are NOT cached to avoid config pollution between experiments
 const promptCache = {};
-const modelOptionsCache = {};
 
 async function getPrompt(promptVersion) {
   if (promptCache[promptVersion]) {
@@ -39,20 +39,35 @@ async function getPrompt(promptVersion) {
 }
 
 /**
- * Get Ollama model options from Parameter Store (with caching)
+ * Get Ollama model options
+ *
+ * Priority:
+ * 1. Config passed in event (atomic, no race conditions)
+ * 2. Parameter Store (legacy fallback)
  *
  * Configurable parameters:
  * - num_ctx: Context window size (default 32768)
  * - temperature: Sampling temperature (default 0.2)
  * - num_predict: Max output tokens (default 2000)
  * - repeat_penalty: Repetition penalty (default 1.4)
+ *
+ * @param {Object} eventConfig - Optional config from event.config
  */
-async function getOllamaOptions() {
-  if (Object.keys(modelOptionsCache).length > 0) {
-    return modelOptionsCache;
+async function getOllamaOptions(eventConfig = null) {
+  // If config provided in event, use it (atomic approach)
+  if (eventConfig && Object.keys(eventConfig).length > 0) {
+    console.log('Using config from event:', eventConfig);
+    return {
+      num_ctx: eventConfig.numCtx || 32768,
+      temperature: eventConfig.temperature !== undefined ? eventConfig.temperature : 0.2,
+      num_predict: eventConfig.numPredict || 2000,
+      repeat_penalty: eventConfig.repeatPenalty || 1.4
+    };
   }
 
-  // Fetch all Ollama options in parallel
+  // Fallback: fetch from Parameter Store (legacy behavior)
+  console.log('Fetching config from Parameter Store (fallback)');
+
   const [numCtx, temperature, numPredict, repeatPenalty] = await Promise.all([
     ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
       .then(res => parseInt(res.Parameter.Value))
@@ -71,12 +86,12 @@ async function getOllamaOptions() {
       .catch(() => 1.4) // Default: 1.4 to reduce stuck loops
   ]);
 
-  modelOptionsCache.num_ctx = numCtx;
-  modelOptionsCache.temperature = temperature;
-  modelOptionsCache.num_predict = numPredict;
-  modelOptionsCache.repeat_penalty = repeatPenalty;
-
-  return modelOptionsCache;
+  return {
+    num_ctx: numCtx,
+    temperature,
+    num_predict: numPredict,
+    repeat_penalty: repeatPenalty
+  };
 }
 
 async function getOllamaEndpoint() {
@@ -215,7 +230,8 @@ exports.handler = async (event) => {
       goalDescription,
       promptVersion = 'v1',
       modelName = 'llama3.2:latest',
-      turnNumber = 1
+      turnNumber = 1,
+      config = null  // Optional config passed in event
     } = event;
 
     console.log(`Ollama invocation for experiment ${experimentId} at position (${currentX}, ${currentY}) using prompt ${promptVersion}`);
@@ -237,7 +253,7 @@ Use the provided tools to navigate and explore. You will receive vision feedback
     // Get Ollama endpoint, API key, and model options
     const endpoint = await getOllamaEndpoint();
     const apiKey = await getOllamaApiKey();
-    const modelOptions = await getOllamaOptions();
+    const modelOptions = await getOllamaOptions(config);  // Pass config from event
     console.log(`Ollama endpoint: ${endpoint}`);
     console.log(`Model options:`, modelOptions);
 

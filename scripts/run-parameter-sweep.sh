@@ -7,8 +7,8 @@
 # - Series B: Temperature values (6 experiments)
 # - Series C: Repeat penalty values (3 experiments)
 #
-# Each experiment takes ~16 minutes at 500 moves
-# Total estimated time: ~3.2 hours
+# Each experiment takes ~3-5 minutes with GPU acceleration
+# Total estimated time: ~1 hour (experiments) + ~1 minute (delays)
 
 set -e  # Exit on error
 
@@ -25,13 +25,13 @@ echo "Model: $MODEL"
 echo "Maze: #$MAZE_ID (60x60 grid)"
 echo "Max moves: 500 (from Parameter Store)"
 echo ""
-echo "⚠️  This will run 12 experiments sequentially (with 180s isolation delays)"
-echo "⏱️  Estimated time: ~3.75 hours (3.2h experiments + 33m delays)"
+echo "⚠️  This will run 12 experiments sequentially (with 5s delays between triggers)"
+echo "⏱️  Estimated time: ~1 hour (experiments run in parallel via queue)"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
 
-# Helper function to set parameters and trigger experiment
+# Helper function to trigger experiment with config
 run_experiment() {
   local series=$1
   local name=$2
@@ -46,32 +46,18 @@ run_experiment() {
   echo "   context=$context, temp=$temp, rep_penalty=$rep_penalty"
   echo ""
 
-  # Update parameters
-  echo "📝 Setting parameters..."
-  aws ssm put-parameter --name '/oriole/ollama/num-ctx' --value "$context" --type 'String' --overwrite --region $REGION --profile $PROFILE > /dev/null
-  aws ssm put-parameter --name '/oriole/ollama/temperature' --value "$temp" --type 'String' --overwrite --region $REGION --profile $PROFILE > /dev/null
-  aws ssm put-parameter --name '/oriole/ollama/repeat-penalty' --value "$rep_penalty" --type 'String' --overwrite --region $REGION --profile $PROFILE > /dev/null
-
-  # Trigger experiment
-  echo "🚀 Triggering experiment..."
-  ./scripts/trigger-experiment.sh OLLAMA NOTUSED $MODEL $MAZE_ID $PROMPT_VERSION
+  # Trigger experiment with config passed directly in event (atomic!)
+  # No Parameter Store writes = No race conditions!
+  echo "🚀 Triggering experiment with config in event..."
+  ./scripts/trigger-experiment.sh OLLAMA NOTUSED $MODEL $MAZE_ID $PROMPT_VERSION "" $context $temp $rep_penalty
 
   echo "✅ Experiment $series started"
   echo ""
 
-  # Delay to ensure:
-  # 1. Previous experiment has fully started and captured its parameters from Parameter Store
-  # 2. Parameter Store changes propagate to new Lambda invocations
-  # 3. No race conditions between parameter updates and experiment starts
-  #
-  # Conservative 180s delay accounts for:
-  # - EventBridge propagation (~5s)
-  # - SQS long polling (~20s)
-  # - Lambda cold start (~5s)
-  # - start-experiment execution (~10s)
-  # - Safety margin (~140s)
-  echo "⏳ Waiting 180 seconds before next experiment (ensures parameter isolation)..."
-  sleep 180
+  # Short delay between triggers (just to be polite to Ollama and AWS)
+  # Config is atomic in message, so no timing concerns!
+  echo "⏳ Waiting 5 seconds before next experiment..."
+  sleep 5
 }
 
 # ========================================
@@ -127,7 +113,7 @@ echo ""
 echo "📊 Monitor progress with:"
 echo "   watch -n 5 ./scripts/check-batch-results.sh 1"
 echo ""
-echo "Expected completion: ~3.75 hours from now"
+echo "Expected completion: ~1 hour from now (with GPU acceleration)"
 echo ""
 echo "Experiment IDs should be: 1-12"
 echo ""

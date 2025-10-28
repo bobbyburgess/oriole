@@ -9,13 +9,17 @@ MODEL_NAME=$3
 MAZE_ID=$4
 PROMPT_VERSION=${5:-v1}  # Default to v1 if not provided
 RESUME_FROM=${6:-""}  # Optional resume-from experiment ID
+NUM_CTX=${7:-""}         # Optional: context window size
+TEMPERATURE=${8:-""}     # Optional: sampling temperature
+REPEAT_PENALTY=${9:-""}  # Optional: repetition penalty
+NUM_PREDICT=${10:-""}    # Optional: max output tokens
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
-  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version]"
+  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [num-ctx] [temperature] [repeat-penalty] [num-predict]"
   echo ""
   echo "Example:"
-  echo "  $0 ABCD1234 EFGH5678 claude-3-5-haiku 1"
-  echo "  $0 ABCD1234 EFGH5678 claude-3-5-haiku 1 v2"
+  echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1"
+  echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1 v1 \"\" 2048 0.2 1.4 2000"
   echo ""
   echo "Available mazes (ID): "
   echo "  1-6:  One-path mazes (sparse to extreme)"
@@ -27,6 +31,12 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
   echo "  12:   Random scatter"
   echo ""
   echo "Prompt versions: v1 (default), v2"
+  echo ""
+  echo "Config parameters (optional for Ollama):"
+  echo "  num-ctx:        Context window size (e.g., 2048, 8192, 32768)"
+  echo "  temperature:    Sampling temperature (e.g., 0.0, 0.2, 0.7)"
+  echo "  repeat-penalty: Repetition penalty (e.g., 1.0, 1.4, 1.6)"
+  echo "  num-predict:    Max output tokens (e.g., 2000)"
   exit 1
 fi
 
@@ -38,6 +48,23 @@ if [ "$AGENT_ID" = "OLLAMA" ]; then
   LLM_PROVIDER="ollama"
 else
   LLM_PROVIDER="bedrock"
+fi
+
+# Build config JSON if parameters provided
+CONFIG_JSON=""
+if [ -n "$NUM_CTX" ] || [ -n "$TEMPERATURE" ] || [ -n "$REPEAT_PENALTY" ] || [ -n "$NUM_PREDICT" ]; then
+  CONFIG_PARTS=()
+  [ -n "$NUM_CTX" ] && CONFIG_PARTS+=("\"numCtx\": $NUM_CTX")
+  [ -n "$TEMPERATURE" ] && CONFIG_PARTS+=("\"temperature\": $TEMPERATURE")
+  [ -n "$REPEAT_PENALTY" ] && CONFIG_PARTS+=("\"repeatPenalty\": $REPEAT_PENALTY")
+  [ -n "$NUM_PREDICT" ] && CONFIG_PARTS+=("\"numPredict\": $NUM_PREDICT")
+
+  # Join with commas
+  CONFIG_ITEMS=$(printf '%s\n' "${CONFIG_PARTS[@]}" | paste -sd ',' -)
+  CONFIG_JSON=",
+  \"config\": {
+    $CONFIG_ITEMS
+  }"
 fi
 
 # Build event detail
@@ -53,7 +80,7 @@ if [ -n "$RESUME_FROM" ]; then
   "startX": 2,
   "startY": 2,
   "resumeFromExperimentId": $RESUME_FROM,
-  "llmProvider": "$LLM_PROVIDER"
+  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON
 }
 EOF
 )
@@ -68,7 +95,7 @@ else
   "goalDescription": "Find the goal marker",
   "startX": 2,
   "startY": 2,
-  "llmProvider": "$LLM_PROVIDER"
+  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON
 }
 EOF
 )
