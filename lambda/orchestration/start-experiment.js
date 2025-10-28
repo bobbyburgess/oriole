@@ -105,7 +105,8 @@ exports.handler = async (event) => {
       mazeId,
       goalDescription = 'Find the goal marker',
       resumeFromExperimentId,
-      llmProvider = 'bedrock'  // Default to bedrock for backwards compatibility
+      llmProvider = 'bedrock',  // Default to bedrock for backwards compatibility
+      config  // Ollama config passed in event (atomic!)
     } = payload;
 
     let { startX = 2, startY = 2 } = payload;
@@ -139,40 +140,35 @@ exports.handler = async (event) => {
      */
     let modelConfig = null;
     if (llmProvider === 'ollama') {
-      console.log('Capturing Ollama model configuration...');
-      const [numCtx, temperature, numPredict, repeatPenalty, recallInterval, maxRecallActions, maxMoves, maxDurationMinutes] =
-        await Promise.all([
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/ollama/num-ctx:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/temperature' }))
-            .then(r => parseFloat(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/ollama/temperature:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-predict' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/ollama/num-predict:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/repeat-penalty' }))
-            .then(r => parseFloat(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/ollama/repeat-penalty:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/experiments/recall-interval:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/experiments/max-recall-actions:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/max-moves:', err.message); return null; }),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
-            .then(r => parseInt(r.Parameter.Value))
-            .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; })
-        ]);
+      if (!config || Object.keys(config).length === 0) {
+        throw new Error('Config must be provided in event for Ollama experiments. Pass config parameters when triggering experiment.');
+      }
+
+      console.log('Using Ollama config from event:', config);
+
+      // Fetch non-model params from Parameter Store (these don't change per-experiment)
+      const [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes] = await Promise.all([
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/experiments/recall-interval:', err.message); return null; }),
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/experiments/max-recall-actions:', err.message); return null; }),
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/max-moves:', err.message); return null; }),
+        ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
+          .then(r => parseInt(r.Parameter.Value))
+          .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; })
+      ]);
 
       modelConfig = {
-        num_ctx: numCtx,
-        temperature: temperature,
-        num_predict: numPredict,
-        repeat_penalty: repeatPenalty,
+        // Model-specific config from event (varies per experiment)
+        num_ctx: config.numCtx || 32768,
+        temperature: config.temperature !== undefined ? config.temperature : 0.2,
+        num_predict: config.numPredict || 2000,
+        repeat_penalty: config.repeatPenalty || 1.4,
+        // System config from Parameter Store (stable across experiments)
         recall_interval: recallInterval,
         max_recall_actions: maxRecallActions,
         max_moves: maxMoves,
@@ -209,7 +205,8 @@ exports.handler = async (event) => {
       currentX: startX,  // Initial position = start position
       currentY: startY,
       turnNumber: 1,  // Initialize turn counter
-      llmProvider  // Pass through to AgentProviderRouter choice state
+      llmProvider,  // Pass through to AgentProviderRouter choice state
+      config  // Pass config through for atomic configuration (no Parameter Store race conditions)
     };
 
   } catch (error) {

@@ -39,11 +39,10 @@ async function getPrompt(promptVersion) {
 }
 
 /**
- * Get Ollama model options
+ * Get Ollama model options from event config
  *
- * Priority:
- * 1. Config passed in event (atomic, no race conditions)
- * 2. Parameter Store (legacy fallback)
+ * Config MUST be passed in event - no Parameter Store fallback.
+ * This ensures atomic, race-condition-free configuration.
  *
  * Configurable parameters:
  * - num_ctx: Context window size (default 32768)
@@ -51,46 +50,20 @@ async function getPrompt(promptVersion) {
  * - num_predict: Max output tokens (default 2000)
  * - repeat_penalty: Repetition penalty (default 1.4)
  *
- * @param {Object} eventConfig - Optional config from event.config
+ * @param {Object} eventConfig - Config from event.config (REQUIRED)
+ * @throws {Error} If config not provided in event
  */
-async function getOllamaOptions(eventConfig = null) {
-  // If config provided in event, use it (atomic approach)
-  if (eventConfig && Object.keys(eventConfig).length > 0) {
-    console.log('Using config from event:', eventConfig);
-    return {
-      num_ctx: eventConfig.numCtx || 32768,
-      temperature: eventConfig.temperature !== undefined ? eventConfig.temperature : 0.2,
-      num_predict: eventConfig.numPredict || 2000,
-      repeat_penalty: eventConfig.repeatPenalty || 1.4
-    };
+async function getOllamaOptions(eventConfig) {
+  if (!eventConfig || Object.keys(eventConfig).length === 0) {
+    throw new Error('Config must be provided in event. Pass config parameters when triggering experiment.');
   }
 
-  // Fallback: fetch from Parameter Store (legacy behavior)
-  console.log('Fetching config from Parameter Store (fallback)');
-
-  const [numCtx, temperature, numPredict, repeatPenalty] = await Promise.all([
-    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-ctx' }))
-      .then(res => parseInt(res.Parameter.Value))
-      .catch(() => 32768), // Default: 32K context window
-
-    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/temperature' }))
-      .then(res => parseFloat(res.Parameter.Value))
-      .catch(() => 0.2), // Default: Low temperature for deterministic navigation
-
-    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/num-predict' }))
-      .then(res => parseInt(res.Parameter.Value))
-      .catch(() => 2000), // Default: 2000 output tokens
-
-    ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/repeat-penalty' }))
-      .then(res => parseFloat(res.Parameter.Value))
-      .catch(() => 1.4) // Default: 1.4 to reduce stuck loops
-  ]);
-
+  console.log('Using config from event:', eventConfig);
   return {
-    num_ctx: numCtx,
-    temperature,
-    num_predict: numPredict,
-    repeat_penalty: repeatPenalty
+    num_ctx: eventConfig.numCtx || 32768,
+    temperature: eventConfig.temperature !== undefined ? eventConfig.temperature : 0.2,
+    num_predict: eventConfig.numPredict || 2000,
+    repeat_penalty: eventConfig.repeatPenalty || 1.4
   };
 }
 

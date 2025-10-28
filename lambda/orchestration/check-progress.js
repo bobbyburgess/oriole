@@ -260,7 +260,9 @@ exports.handler = async (event) => {
       startY: event.startY,
       // CRITICAL: llmProvider routes to correct agent Lambda in AgentProviderRouter choice state
       // See start-experiment.js for full LLM Provider Routing documentation
-      llmProvider: event.llmProvider || 'bedrock'  // Pass through for AgentProviderRouter choice state
+      llmProvider: event.llmProvider || 'bedrock',  // Pass through for AgentProviderRouter choice state
+      // Pass config through for atomic configuration (no Parameter Store race conditions)
+      config: event.config
     };
 
   } catch (error) {
