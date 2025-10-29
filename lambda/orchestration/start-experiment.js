@@ -178,16 +178,12 @@ exports.handler = async (event) => {
       if (config.maxOutputTokens === undefined) {
         throw new Error('maxOutputTokens must be provided in config for Ollama experiments');
       }
-      if (config.repeatPenalty === undefined) {
-        throw new Error('repeatPenalty must be provided in config for Ollama experiments');
-      }
 
       modelConfig = {
         // Model-specific config from event (varies per experiment)
         num_ctx: config.maxContextWindow,
         temperature: config.temperature,
         num_predict: config.maxOutputTokens,
-        repeat_penalty: config.repeatPenalty,
         // System config from Parameter Store (stable across experiments)
         recall_interval: recallInterval,
         max_moves: maxMoves,
@@ -208,15 +204,11 @@ exports.handler = async (event) => {
       if (config.maxOutputTokens === undefined) {
         throw new Error('maxOutputTokens must be provided in config for all experiments');
       }
-      if (config.repeatPenalty === undefined) {
-        throw new Error('repeatPenalty must be provided in config for all experiments');
-      }
 
       modelConfig = {
         num_ctx: config.maxContextWindow,
         temperature: config.temperature,
-        num_predict: config.maxOutputTokens,
-        repeat_penalty: config.repeatPenalty
+        num_predict: config.maxOutputTokens
       };
       console.log('Bedrock model config captured (for tracking only):', modelConfig);
     }

@@ -21,7 +21,6 @@ SELECT
   -- Key model parameters
   COALESCE((model_config->>'num_ctx')::text, '-') as context,
   COALESCE((model_config->>'temperature')::text, '-') as temp,
-  COALESCE((model_config->>'repeat_penalty')::text, '-') as rep_penalty,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true) as moves,
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,

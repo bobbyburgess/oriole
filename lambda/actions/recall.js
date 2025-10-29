@@ -19,6 +19,7 @@ const ssmClient = new SSMClient();
 
 // Module-level caching for configuration parameters
 let cachedRecallInterval = null;
+let cachedMaxRecallDepth = null;
 
 async function getRecallInterval() {
   if (cachedRecallInterval !== null) {
@@ -33,6 +34,21 @@ async function getRecallInterval() {
   const response = await ssmClient.send(command);
   cachedRecallInterval = parseInt(response.Parameter.Value);
   return cachedRecallInterval;
+}
+
+async function getMaxRecallDepth() {
+  if (cachedMaxRecallDepth !== null) {
+    return cachedMaxRecallDepth;
+  }
+
+  const command = new GetParameterCommand({
+    Name: '/oriole/experiments/max-recall-depth',
+    WithDecryption: false
+  });
+
+  const response = await ssmClient.send(command);
+  cachedMaxRecallDepth = parseInt(response.Parameter.Value);
+  return cachedMaxRecallDepth;
 }
 
 /**
@@ -51,111 +67,119 @@ exports.handler = async (event, limit) => {
       };
     }
 
-    /**
-     * Enforce recall cooldown to prevent agents from getting stuck in "thinking loops"
-     *
-     * BEHAVIOR PROBLEM: Without cooldown, LLMs tend to repeatedly call recall
-     *                   without exploring, trying to "reason" their way through the maze
-     *                   Example: recall -> recall -> recall (no movement!)
-     *
-     * SOLUTION: Force minimum exploration between recalls
-     *          Count only MOVEMENT actions (move_*), not other recalls
-     *          This ensures agent is actively exploring, not just thinking
-     *
-     * Default: 10 movements required between recalls (configurable via Parameter Store)
-     */
-    const recallInterval = await getRecallInterval();
-    const dbClient = await db.getDbClient();
+    // Validate and cap depth at configured maximum
+    const maxDepth = await getMaxRecallDepth();
+    const cappedLimit = Math.min(limit, maxDepth);
+    const wasLimited = limit > maxDepth;
 
-    // Find the most recent recall action (any recall_last_* variant)
-    const lastRecallResult = await dbClient.query(
-      `SELECT step_number FROM agent_actions
-       WHERE experiment_id = $1 AND action_type LIKE 'recall_last_%'
-       ORDER BY step_number DESC LIMIT 1`,
-      [experimentId]
-    );
-
-    // If there was a previous recall, check if enough moves have been made since
-    if (lastRecallResult.rows.length > 0) {
-      const lastRecallStep = lastRecallResult.rows[0].step_number;
-
-      // Count only MOVEMENT actions (not other recalls)
-      // This ensures the agent is actually exploring, not just thinking
-      const movesSinceRecallResult = await dbClient.query(
-        `SELECT COUNT(*) as move_count FROM agent_actions
-         WHERE experiment_id = $1
-         AND step_number > $2
-         AND action_type LIKE 'move_%'`,
-        [experimentId, lastRecallStep]
-      );
-
-      const movesSinceRecall = parseInt(movesSinceRecallResult.rows[0].move_count);
-
-      // Reject if cooldown is still active
-      if (movesSinceRecall < recallInterval) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            error: `Recall cooldown active. You must make ${recallInterval - movesSinceRecall} more movement actions before calling any recall tool again. Use your vision and continue exploring!`,
-            movesSinceLastRecall: movesSinceRecall,
-            movesRequired: recallInterval
-          })
-        };
-      }
+    if (wasLimited) {
+      console.log(`Depth ${limit} exceeds max ${maxDepth}, capping to ${maxDepth}`);
     }
-    // First recall is always allowed (no previous recall to check)
-
-    // Get tiles the agent has seen (limited to recent N actions based on tool called)
-    const seenTiles = await db.getAllSeenTiles(experimentId, limit);
 
     // Get current position
     const currentPos = await db.getCurrentPosition(experimentId);
+    const dbClient = await db.getDbClient();
 
-    // Get next step number
+    // Get detailed action history (path + vision)
+    const historyResult = await dbClient.query(
+      `SELECT action_type, from_x, from_y, to_x, to_y, tiles_seen, success
+       FROM agent_actions
+       WHERE experiment_id = $1
+         AND action_type <> 'no_tool_call'
+         AND action_type NOT LIKE 'recall_%'
+       ORDER BY step_number DESC
+       LIMIT $2`,
+      [experimentId, cappedLimit]
+    );
+
+    const actions = historyResult.rows.reverse(); // Chronological order
+
+    // Build exploration history (path + vision combined)
+    const explorationHistory = actions.map(action => {
+      const position = action.success
+        ? `(${action.to_x}, ${action.to_y})`
+        : `(${action.from_x}, ${action.from_y})`;
+
+      let visionText = 'No vision data';
+      if (action.tiles_seen) {
+        const tiles = typeof action.tiles_seen === 'string'
+          ? JSON.parse(action.tiles_seen)
+          : action.tiles_seen;
+        const tileDescriptions = tiles.map(t => {
+          const tileType = t.type === 'goal' ? 'GOAL' : t.type;
+          return `${tileType} at (${t.x},${t.y})`;
+        });
+        visionText = tileDescriptions.length > 0
+          ? `Saw ${tileDescriptions.join(', ')}`
+          : 'No tiles visible';
+      }
+
+      const moveResult = action.success ? '✓' : '✗';
+      return `${moveResult} ${action.action_type} → ${position}: ${visionText}`;
+    });
+
+    // Build tiles discovered summary (deduplicated)
+    const tilesDiscovered = { empty: [], wall: [], goal: [] };
+    const seenCoords = new Set();
+
+    for (const action of actions) {
+      if (action.tiles_seen) {
+        const tiles = typeof action.tiles_seen === 'string'
+          ? JSON.parse(action.tiles_seen)
+          : action.tiles_seen;
+
+        for (const tile of tiles) {
+          const coord = `(${tile.x},${tile.y})`;
+          if (!seenCoords.has(coord)) {
+            seenCoords.add(coord);
+            if (tile.type === vision.GOAL || tile.type === 'goal') {
+              tilesDiscovered.goal.push(coord);
+            } else if (tile.type === vision.WALL || tile.type === 'wall') {
+              tilesDiscovered.wall.push(coord);
+            } else {
+              tilesDiscovered.empty.push(coord);
+            }
+          }
+        }
+      }
+    }
+
+    // Get next step number for logging
     const stepNumber = await db.getNextStepNumber(experimentId);
 
-    // Log the recall action with specific tool name
+    // Log the recall action (use empty object for tiles_seen since we're returning structured history)
     await db.logAction(
       experimentId,
       stepNumber,
-      `recall_last_${limit}`,
+      'recall_movement_history',
       reasoning || '',
       currentPos.x,
       currentPos.y,
       null, // No movement
       null,
       true, // Always succeeds
-      seenTiles,
+      {}, // Empty tiles_seen (not using this field for recall_movement_history)
       turnNumber || null
     );
 
-    // Format the recalled memory
-    const memory = [];
-    for (const [coord, type] of Object.entries(seenTiles)) {
-      const [x, y] = coord.split(',').map(Number);
-      let tileType = '';
-      switch (type) {
-        case vision.EMPTY:
-          tileType = 'empty';
-          break;
-        case vision.WALL:
-          tileType = 'wall';
-          break;
-        case vision.GOAL:
-          tileType = 'GOAL';
-          break;
-      }
-      memory.push({ x, y, type: tileType });
-    }
+    // Build path summary
+    const pathSummary = actions.length > 0
+      ? `${actions.length} actions: ${actions[0].from_x},${actions[0].from_y} → ${currentPos.x},${currentPos.y}`
+      : 'No movement history';
 
-    // Build response message with explicit limit information
-    const message = `Memory recall complete. You have ${memory.length} tiles from your last ${limit} actions. Current position: (${currentPos.x}, ${currentPos.y})`;
+    let message = `Recalled last ${cappedLimit} actions. ${pathSummary}. Discovered ${seenCoords.size} unique tiles.`;
+
+    if (wasLimited) {
+      message += ` NOTE: You requested depth=${limit}, but the maximum recall depth is ${maxDepth}. Only the last ${maxDepth} actions were returned. This limit helps manage token usage and context window constraints.`;
+    }
 
     const response = {
       success: true,
+      actionsRecalled: actions.length,
+      pathSummary: pathSummary,
+      explorationHistory: explorationHistory,
+      tilesDiscovered: tilesDiscovered,
       currentPosition: currentPos,
-      tilesSeen: memory.length,
-      memory: memory,
       message: message
     };
 

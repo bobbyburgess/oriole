@@ -92,7 +92,7 @@ exports.handler = async (event) => {
     });
 
     experimentId = params.experimentId;
-    const { reasoning } = params;
+    const { reasoning, depth } = params;
 
     // Extract turnNumber from session attributes (passed via invoke-agent.js)
     const turnNumber = sessionAttributes?.turnNumber ? parseInt(sessionAttributes.turnNumber) : null;
@@ -123,20 +123,8 @@ exports.handler = async (event) => {
         result = await handleMove('west', { experimentId, reasoning, turnNumber });
         break;
 
-      case '/recall_last_25':
-        result = await recall.handler({ experimentId, reasoning, turnNumber }, 25);
-        break;
-
-      case '/recall_last_50':
-        result = await recall.handler({ experimentId, reasoning, turnNumber }, 50);
-        break;
-
-      case '/recall_last_100':
-        result = await recall.handler({ experimentId, reasoning, turnNumber }, 100);
-        break;
-
-      case '/recall_last_200':
-        result = await recall.handler({ experimentId, reasoning, turnNumber }, 200);
+      case '/recall_movement_history':
+        result = await recall.handler({ experimentId, reasoning, turnNumber }, depth);
         break;
 
       default:

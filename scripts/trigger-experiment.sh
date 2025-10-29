@@ -11,15 +11,14 @@ PROMPT_VERSION=${5:-v1}  # Default to v1 if not provided
 RESUME_FROM=${6:-""}  # Optional resume-from experiment ID
 NUM_CTX=${7:-""}         # Optional: context window size
 TEMPERATURE=${8:-""}     # Optional: sampling temperature
-REPEAT_PENALTY=${9:-""}  # Optional: repetition penalty
-NUM_PREDICT=${10:-""}    # Optional: max output tokens
+NUM_PREDICT=${9:-""}     # Optional: max output tokens
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
-  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [max-context-window] [temperature] [repeat-penalty] [max-output-tokens]"
+  echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [max-context-window] [temperature] [max-output-tokens]"
   echo ""
   echo "Example:"
   echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1"
-  echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1 v1 \"\" 2048 0.2 1.4 2000"
+  echo "  $0 OLLAMA NOTUSED qwen2.5:7b 1 v1 \"\" 2048 0.2 2000"
   echo ""
   echo "Available mazes (ID): "
   echo "  1-6:  One-path mazes (sparse to extreme)"
@@ -35,7 +34,6 @@ if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -
   echo "Config parameters (optional for Ollama):"
   echo "  max-context-window: Total context window size in tokens (e.g., 2048, 8192, 32768)"
   echo "  temperature:        Sampling temperature (e.g., 0.0, 0.2, 0.7)"
-  echo "  repeat-penalty:     Repetition penalty (e.g., 1.0, 1.4, 1.6)"
   echo "  max-output-tokens:  Max tokens in model output (e.g., 2000)"
   exit 1
 fi
@@ -51,14 +49,13 @@ else
 fi
 
 # Require all config parameters (fail fast if missing)
-if [ -z "$NUM_CTX" ] || [ -z "$TEMPERATURE" ] || [ -z "$REPEAT_PENALTY" ] || [ -z "$NUM_PREDICT" ]; then
+if [ -z "$NUM_CTX" ] || [ -z "$TEMPERATURE" ] || [ -z "$NUM_PREDICT" ]; then
   echo "ERROR: All config parameters are required!"
   echo "  max-context-window: $NUM_CTX"
   echo "  temperature: $TEMPERATURE"
-  echo "  repeat-penalty: $REPEAT_PENALTY"
   echo "  max-output-tokens: $NUM_PREDICT"
   echo ""
-  echo "You must provide ALL four parameters."
+  echo "You must provide ALL three parameters."
   exit 1
 fi
 
@@ -67,7 +64,6 @@ CONFIG_JSON=",
   \"config\": {
     \"maxContextWindow\": $NUM_CTX,
     \"temperature\": $TEMPERATURE,
-    \"repeatPenalty\": $REPEAT_PENALTY,
     \"maxOutputTokens\": $NUM_PREDICT
   }"
 
@@ -79,7 +75,7 @@ if [ -n "$RESUME_FROM" ]; then
   "agentAliasId": "$AGENT_ALIAS_ID",
   "modelName": "$MODEL_NAME",
   "promptVersion": "$PROMPT_VERSION",
-  "mazeId": $MAZE_ID,
+  "mazeId": "$MAZE_ID",
   "startX": 2,
   "startY": 2,
   "resumeFromExperimentId": $RESUME_FROM,
@@ -94,7 +90,7 @@ else
   "agentAliasId": "$AGENT_ALIAS_ID",
   "modelName": "$MODEL_NAME",
   "promptVersion": "$PROMPT_VERSION",
-  "mazeId": $MAZE_ID,
+  "mazeId": "$MAZE_ID",
   "startX": 2,
   "startY": 2,
   "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON

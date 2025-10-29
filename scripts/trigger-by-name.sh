@@ -3,12 +3,12 @@
 # Trigger Experiment by Model Name
 # Looks up agent/alias IDs from Parameter Store and triggers an experiment
 #
-# Usage: ./trigger-by-name.sh <model-name> <maze-id> [prompt-version] [max-context-window] [temperature] [repeat-penalty] [max-output-tokens] [--resume-from <experiment-id>]
+# Usage: ./trigger-by-name.sh <model-name> <maze-id> [prompt-version] [max-context-window] [temperature] [max-output-tokens] [--resume-from <experiment-id>]
 #
 # Example:
-#   ./trigger-by-name.sh claude-3.5-haiku 1 v2 32768 0.2 1.0 4096
-#   ./trigger-by-name.sh nova-pro 3 v3-react-basic 32768 0.5 1.0 4096
-#   ./trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive 32768 0.2 1.0 4096 --resume-from 150
+#   ./trigger-by-name.sh claude-3.5-haiku 1 v2 32768 0.2 4096
+#   ./trigger-by-name.sh nova-pro 3 v3-react-basic 32768 0.5 4096
+#   ./trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive 32768 0.2 4096 --resume-from 150
 #
 # Available models:
 #   AWS Bedrock:
@@ -30,12 +30,11 @@ MAZE_ID=$2
 PROMPT_VERSION=${3:-v1}
 MAX_CONTEXT_WINDOW=$4
 TEMPERATURE=$5
-REPEAT_PENALTY=$6
-MAX_OUTPUT_TOKENS=$7
+MAX_OUTPUT_TOKENS=$6
 RESUME_FROM=""
 
 # Parse optional --resume-from parameter
-shift 7 2>/dev/null || true
+shift 6 2>/dev/null || true
 while [[ $# -gt 0 ]]; do
   case $1 in
     --resume-from)
@@ -51,13 +50,12 @@ done
 REGION="us-west-2"
 PROFILE="bobby"
 
-if [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ] || [ -z "$MAX_CONTEXT_WINDOW" ] || [ -z "$TEMPERATURE" ] || [ -z "$REPEAT_PENALTY" ] || [ -z "$MAX_OUTPUT_TOKENS" ]; then
-  echo "Usage: $0 <model-name> <maze-id> <prompt-version> <max-context-window> <temperature> <repeat-penalty> <max-output-tokens> [--resume-from <experiment-id>]"
+if [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ] || [ -z "$MAX_CONTEXT_WINDOW" ] || [ -z "$TEMPERATURE" ] || [ -z "$MAX_OUTPUT_TOKENS" ]; then
+  echo "Usage: $0 <model-name> <maze-id> <prompt-version> <max-context-window> <temperature> <max-output-tokens> [--resume-from <experiment-id>]"
   echo ""
   echo "All config parameters are REQUIRED:"
   echo "  max-context-window: Total context window in tokens (e.g., 32768, 200000)"
   echo "  temperature:        Sampling temperature (e.g., 0.0, 0.2, 0.7)"
-  echo "  repeat-penalty:     Repetition penalty (e.g., 1.0, 1.4)"
   echo "  max-output-tokens:  Max tokens in output (e.g., 2000, 4096)"
   echo ""
   echo "Available models:"
@@ -135,4 +133,4 @@ fi
 
 # Call the original trigger script with the resolved IDs and config params
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/trigger-experiment.sh" "$AGENT_ID" "$ALIAS_ID" "$MODEL_NAME" "$MAZE_ID" "$PROMPT_VERSION" "$RESUME_FROM" "$MAX_CONTEXT_WINDOW" "$TEMPERATURE" "$REPEAT_PENALTY" "$MAX_OUTPUT_TOKENS"
+"$SCRIPT_DIR/trigger-experiment.sh" "$AGENT_ID" "$ALIAS_ID" "$MODEL_NAME" "$MAZE_ID" "$PROMPT_VERSION" "$RESUME_FROM" "$MAX_CONTEXT_WINDOW" "$TEMPERATURE" "$MAX_OUTPUT_TOKENS"
