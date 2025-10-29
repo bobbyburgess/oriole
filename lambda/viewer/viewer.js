@@ -800,34 +800,40 @@ function getViewerHTML(colors) {
         console.log('Loaded experiments:', experiments);
 
         const dropdown = document.getElementById('experimentDropdown');
-        dropdown.innerHTML = '<option value="">Select an experiment...</option>';
 
-        experiments.forEach(exp => {
-          const option = document.createElement('option');
-          option.value = exp.id;
+        if (experiments.length === 0) {
+          // No experiments in database
+          dropdown.innerHTML = '<option value="">(No experiments found)</option>';
+        } else {
+          dropdown.innerHTML = '<option value="">Select an experiment...</option>';
 
-          // Determine display text and style based on experiment outcome
-          let displayText, className;
-          const stepCountText = exp.step_count !== undefined ? \` (\${exp.step_count} steps)\` : '';
+          experiments.forEach(exp => {
+            const option = document.createElement('option');
+            option.value = exp.id;
 
-          if (exp.error_type) {
-            // Failed experiment (e.g., ThrottlingException)
-            displayText = \`\${exp.id} - \${exp.model_name} ⚠ \${exp.error_type}\${stepCountText}\`;
-            className = 'throttled';
-          } else if (exp.goal_found) {
-            // Successfully found the goal
-            displayText = \`\${exp.id} - \${exp.model_name} ✓\${stepCountText}\`;
-            className = 'success';
-          } else {
-            // Completed but didn't find goal
-            displayText = \`\${exp.id} - \${exp.model_name} ✗\${stepCountText}\`;
-            className = 'failure';
-          }
+            // Determine display text and style based on experiment outcome
+            let displayText, className;
+            const stepCountText = exp.step_count !== undefined ? \` (\${exp.step_count} steps)\` : '';
 
-          option.textContent = displayText;
-          option.className = className;
-          dropdown.appendChild(option);
-        });
+            if (exp.error_type) {
+              // Failed experiment (e.g., ThrottlingException)
+              displayText = \`\${exp.id} - \${exp.model_name} ⚠ \${exp.error_type}\${stepCountText}\`;
+              className = 'throttled';
+            } else if (exp.goal_found) {
+              // Successfully found the goal
+              displayText = \`\${exp.id} - \${exp.model_name} ✓\${stepCountText}\`;
+              className = 'success';
+            } else {
+              // Completed but didn't find goal
+              displayText = \`\${exp.id} - \${exp.model_name} ✗\${stepCountText}\`;
+              className = 'failure';
+            }
+
+            option.textContent = displayText;
+            option.className = className;
+            dropdown.appendChild(option);
+          });
+        }
 
         console.log('Loaded', experiments.length, 'experiments');
       } catch (error) {
