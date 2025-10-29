@@ -138,7 +138,23 @@ async function getNextStepNumber(experimentId) {
     'SELECT MAX(step_number) as max_step FROM agent_actions WHERE experiment_id = $1',
     [experimentId]
   );
-  return (result.rows[0].max_step || 0) + 1;
+
+  // FAIL FAST: Validate query returned results
+  if (!result.rows || result.rows.length === 0) {
+    throw new Error(`Failed to query max step number for experiment ${experimentId}`);
+  }
+
+  // NULL is valid for first action (no previous actions), but other values should be numbers
+  const maxStep = result.rows[0].max_step;
+  if (maxStep === null) {
+    return 1; // First action
+  }
+
+  if (typeof maxStep !== 'number' || isNaN(maxStep)) {
+    throw new Error(`Invalid max_step value for experiment ${experimentId}: ${maxStep}`);
+  }
+
+  return maxStep + 1;
 }
 
 // Log an agent action

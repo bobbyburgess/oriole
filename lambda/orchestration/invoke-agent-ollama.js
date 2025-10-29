@@ -52,24 +52,8 @@ async function getPrompt(promptVersion) {
  * NOT cached - fetches from Parameter Store every time to ensure
  * parameter updates take effect immediately (even on warm containers).
  */
-async function getMaxActionsPerTurn() {
-  try {
-    const command = new GetParameterCommand({
-      Name: '/oriole/ollama/max-actions-per-turn'
-    });
-    const response = await ssmClient.send(command);
-    const value = parseInt(response.Parameter.Value, 10);
-
-    // 0 means unlimited - use Infinity for loop checks
-    const maxActions = value === 0 ? Infinity : value;
-
-    console.log(`Max actions per turn: ${value === 0 ? 'unlimited' : value}`);
-    return maxActions;
-  } catch (error) {
-    console.warn('Failed to load max-actions-per-turn from Parameter Store, using default of 50:', error.message);
-    return 50; // Fallback to generous default
-  }
-}
+// REMOVED: getMaxActionsPerTurn() - now using value from model_config stored at experiment start
+// This eliminates fallback to default=50 and ensures atomic configuration
 
 /**
  * Get Ollama model options from event config
@@ -132,6 +116,7 @@ async function getOllamaApiKey() {
 }
 
 async function getOllamaRequestTimeout() {
+  // FAIL FAST: Request timeout is critical for slow models - don't fallback to default
   try {
     const command = new GetParameterCommand({
       Name: '/oriole/ollama/request-timeout-ms'
@@ -139,8 +124,7 @@ async function getOllamaRequestTimeout() {
     const response = await ssmClient.send(command);
     return parseInt(response.Parameter.Value, 10);
   } catch (error) {
-    console.warn('Failed to load request-timeout-ms from Parameter Store, using default of 120000ms:', error.message);
-    return 120000; // 2 minutes default
+    throw new Error(`Failed to load required parameter /oriole/ollama/request-timeout-ms: ${error.message}`);
   }
 }
 
@@ -246,9 +230,14 @@ async function executeAction(action, args, experimentId, turnNumber, stepNumber)
   const payload = JSON.parse(new TextDecoder().decode(response.Payload));
 
   // Parse the Bedrock Agent response format to extract the actual result
-  const result = typeof payload.response?.responseBody?.['application/json']?.body === 'string'
+  // FAIL FAST: Don't return empty object if action router failed - agent needs to know about failures
+  if (!payload.response?.responseBody?.['application/json']?.body) {
+    throw new Error(`Invalid action router response for ${actionType}: missing response.responseBody['application/json'].body. Full payload: ${JSON.stringify(payload)}`);
+  }
+
+  const result = typeof payload.response.responseBody['application/json'].body === 'string'
     ? JSON.parse(payload.response.responseBody['application/json'].body)
-    : payload.response?.responseBody?.['application/json']?.body || {};
+    : payload.response.responseBody['application/json'].body;
 
   return result;
 }
@@ -306,7 +295,27 @@ Use the provided tools to navigate and explore. You will receive vision feedback
     ];
 
     let actionCount = 0;
-    const maxActions = await getMaxActionsPerTurn();
+
+    // Get max actions from experiment config (stored at experiment start)
+    // FAIL FAST: Don't fall back to defaults - use the config that was validated and stored
+    const db = await getDbClient();
+    const configResult = await db.query(
+      'SELECT model_config FROM experiments WHERE id = $1',
+      [experimentId]
+    );
+
+    if (!configResult.rows || configResult.rows.length === 0 || !configResult.rows[0].model_config) {
+      throw new Error(`Missing model_config for experiment ${experimentId} - all experiments must have explicit config`);
+    }
+
+    const storedConfig = configResult.rows[0].model_config;
+    if (storedConfig.max_actions_per_turn === undefined || storedConfig.max_actions_per_turn === null) {
+      throw new Error(`Missing max_actions_per_turn in model_config for experiment ${experimentId}`);
+    }
+
+    const maxActions = storedConfig.max_actions_per_turn === 0 ? Infinity : storedConfig.max_actions_per_turn;
+    console.log(`Max actions per turn: ${storedConfig.max_actions_per_turn === 0 ? 'unlimited' : storedConfig.max_actions_per_turn}`);
+
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let goalFound = false;
@@ -326,9 +335,17 @@ Use the provided tools to navigate and explore. You will receive vision feedback
       console.log(`[TIMING] Ollama call completed in ${elapsed}ms`);
 
       // Track token usage
-      totalInputTokens += response.prompt_eval_count || 0;
-      totalOutputTokens += response.eval_count || 0;
-      console.log(`Token usage: ${response.prompt_eval_count || 0} in, ${response.eval_count || 0} out`);
+      // FAIL FAST: Token counts are critical for cost tracking and experiment analysis
+      if (response.prompt_eval_count === undefined || response.prompt_eval_count === null) {
+        throw new Error(`Missing prompt_eval_count in Ollama response for model ${modelName}`);
+      }
+      if (response.eval_count === undefined || response.eval_count === null) {
+        throw new Error(`Missing eval_count in Ollama response for model ${modelName}`);
+      }
+
+      totalInputTokens += response.prompt_eval_count;
+      totalOutputTokens += response.eval_count;
+      console.log(`Token usage: ${response.prompt_eval_count} in, ${response.eval_count} out`);
 
       // Add assistant's message to conversation history
       const assistantMessage = response.message;

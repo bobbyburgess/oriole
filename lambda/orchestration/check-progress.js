@@ -82,9 +82,9 @@ async function getRateLimitRpm(modelName) {
     rateLimitCache[modelName] = parseInt(response.Parameter.Value);
     return rateLimitCache[modelName];
   } catch (error) {
-    // If no rate limit configured for this model, default to 10 rpm (6s between requests)
-    console.warn(`No rate limit found for model ${modelName}, defaulting to 10 rpm`);
-    return 10;
+    // FAIL FAST: Rate limits must be explicitly configured for each model
+    // Wrong rate limit causes either throttling (if too high) or wasted time (if too low)
+    throw new Error(`Rate limit not configured for model ${modelName}. Please set /oriole/rate-limits/${modelName} in Parameter Store. Error: ${error.message}`);
   }
 }
 
@@ -129,10 +129,20 @@ exports.handler = async (event) => {
     }
 
     // Extract token/cost data from the agent invocation result
-    // CRITICAL: Force to Number to prevent string concatenation
-    const invocationTokensIn = Number(agentPayload.inputTokens || 0);
-    const invocationTokensOut = Number(agentPayload.outputTokens || 0);
-    const invocationCost = Number(agentPayload.cost || 0);
+    // FAIL FAST: Token counts are critical for cost tracking - missing values indicate API contract changes
+    if (agentPayload.inputTokens === undefined || agentPayload.inputTokens === null) {
+      throw new Error(`Missing inputTokens in agent response for experiment ${experimentId}`);
+    }
+    if (agentPayload.outputTokens === undefined || agentPayload.outputTokens === null) {
+      throw new Error(`Missing outputTokens in agent response for experiment ${experimentId}`);
+    }
+    if (agentPayload.cost === undefined || agentPayload.cost === null) {
+      throw new Error(`Missing cost in agent response for experiment ${experimentId}`);
+    }
+
+    const invocationTokensIn = Number(agentPayload.inputTokens);
+    const invocationTokensOut = Number(agentPayload.outputTokens);
+    const invocationCost = Number(agentPayload.cost);
 
     const db = await getDbClient();
     const maxMoves = await getMaxMoves();

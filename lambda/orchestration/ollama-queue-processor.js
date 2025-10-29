@@ -36,8 +36,8 @@ async function getMaxConcurrent() {
     console.log(`Max concurrent Ollama experiments set to: ${cachedMaxConcurrent}`);
     return cachedMaxConcurrent;
   } catch (error) {
-    console.warn('Failed to get max-concurrent-experiments from SSM, using default of 1:', error.message);
-    return 1; // Default to 1 if parameter not found
+    // FAIL FAST: Concurrent experiment limit is critical for performance and resource management
+    throw new Error(`Failed to load required parameter /oriole/ollama/max-concurrent-experiments: ${error.message}`);
   }
 }
 

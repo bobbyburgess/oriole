@@ -191,7 +191,9 @@ exports.handler = async (event) => {
         console.log(`Released lock for experiment ${experimentId}`);
       } catch (unlockError) {
         console.error(`Failed to release lock for experiment ${experimentId}:`, unlockError);
-        // Don't throw - lock will be released when connection closes
+        // Don't throw - PostgreSQL advisory locks are automatically released when connection closes
+        // This is safe, but repeated failures may indicate database issues
+        // TODO: Add CloudWatch metric to track lock release failures for monitoring
       }
     }
   }

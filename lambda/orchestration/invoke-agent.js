@@ -68,8 +68,8 @@ async function getPricing() {
 function calculateCost(modelName, inputTokens, outputTokens, pricing) {
   const modelPricing = pricing[modelName];
   if (!modelPricing) {
-    console.warn(`No pricing found for model: ${modelName}`);
-    return 0;
+    // FAIL FAST: Cost tracking is critical for budget management - don't return $0 for unknown models
+    throw new Error(`No pricing configured for model: ${modelName}. Please add pricing to MODEL_PRICING constant in invoke-agent.js`);
   }
 
   const inputCost = (inputTokens / 1000000) * modelPricing.input_per_mtok;
@@ -206,8 +206,23 @@ When you call any action, always include experimentId=${experimentId} in your re
           const usage = chunk.trace.trace.orchestrationTrace.modelInvocationOutput?.metadata?.usage;
           if (usage) {
             // Support both plural (Claude) and singular (Nova/docs) field names
-            inputTokens = usage.inputTokens || usage.inputToken || 0;
-            outputTokens = usage.outputTokens || usage.outputToken || 0;
+            // FAIL FAST: If neither field name exists, API contract has changed - don't silently default to 0
+            if (usage.inputTokens !== undefined && usage.inputTokens !== null) {
+              inputTokens = usage.inputTokens;
+            } else if (usage.inputToken !== undefined && usage.inputToken !== null) {
+              inputTokens = usage.inputToken;
+            } else {
+              throw new Error(`Token usage missing both 'inputTokens' and 'inputToken' fields in Bedrock Agent response`);
+            }
+
+            if (usage.outputTokens !== undefined && usage.outputTokens !== null) {
+              outputTokens = usage.outputTokens;
+            } else if (usage.outputToken !== undefined && usage.outputToken !== null) {
+              outputTokens = usage.outputToken;
+            } else {
+              throw new Error(`Token usage missing both 'outputTokens' and 'outputToken' fields in Bedrock Agent response`);
+            }
+
             console.log(`[TIMING] Token usage received: ${inputTokens} in, ${outputTokens} out (chunk ${chunkCount}, elapsed ${Date.now() - streamStartTime}ms)`);
           }
         }

@@ -148,26 +148,27 @@ exports.handler = async (event) => {
       console.log('Using Ollama config from event:', config);
 
       // Fetch non-model params from Parameter Store (these don't change per-experiment)
-      const [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange] = await Promise.all([
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/experiments/recall-interval:', err.message); return null; }),
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/experiments/max-recall-actions:', err.message); return null; }),
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/max-moves:', err.message); return null; }),
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/max-duration-minutes:', err.message); return null; }),
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/max-actions-per-turn' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/ollama/max-actions-per-turn:', err.message); return null; }),
-        ssmClient.send(new GetParameterCommand({ Name: '/oriole/gameplay/vision-range' }))
-          .then(r => parseInt(r.Parameter.Value))
-          .catch(err => { console.warn('Failed to read /oriole/gameplay/vision-range:', err.message); return null; })
-      ]);
+      // FAIL FAST: If any parameter is missing, experiment should fail immediately
+      // rather than storing null values that cause undefined behavior later
+      let recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange;
+      try {
+        [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange] = await Promise.all([
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
+            .then(r => parseInt(r.Parameter.Value)),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
+            .then(r => parseInt(r.Parameter.Value)),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
+            .then(r => parseInt(r.Parameter.Value)),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-duration-minutes' }))
+            .then(r => parseInt(r.Parameter.Value)),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/ollama/max-actions-per-turn' }))
+            .then(r => parseInt(r.Parameter.Value)),
+          ssmClient.send(new GetParameterCommand({ Name: '/oriole/gameplay/vision-range' }))
+            .then(r => parseInt(r.Parameter.Value))
+        ]);
+      } catch (error) {
+        throw new Error(`Failed to load required Parameter Store configuration: ${error.message}`);
+      }
 
       // Validate all required config fields are present
       if (config.maxContextWindow === undefined) {
