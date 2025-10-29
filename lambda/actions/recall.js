@@ -9,6 +9,12 @@
 // Purpose: Allows agents to strategically manage memory/context tradeoff
 // Cooldown: Configurable minimum number of moves between recalls (prevents analysis paralysis)
 //
+// Tile Type Encoding in tiles_seen:
+// - tiles_seen is stored as object: {"x,y": type}
+// - type can be: 0 (empty), 1 (wall), 2 (goal)
+// - Compared against vision.EMPTY (0), vision.WALL (1), vision.GOAL (2)
+// - Returned to agent as strings: "empty", "wall", "GOAL"
+//
 // Configurable via: /oriole/experiments/recall-interval (default: 10 moves)
 
 const db = require('../shared/db');
@@ -105,9 +111,12 @@ exports.handler = async (event, limit) => {
         const tiles = typeof action.tiles_seen === 'string'
           ? JSON.parse(action.tiles_seen)
           : action.tiles_seen;
-        const tileDescriptions = tiles.map(t => {
-          const tileType = t.type === 'goal' ? 'GOAL' : t.type;
-          return `${tileType} at (${t.x},${t.y})`;
+
+        // tiles_seen is stored as an object {x,y: type}, not an array
+        const tileEntries = Object.entries(tiles);
+        const tileDescriptions = tileEntries.map(([coord, type]) => {
+          const tileType = type === 'goal' ? 'GOAL' : type;
+          return `${tileType} at ${coord}`;
         });
         visionText = tileDescriptions.length > 0
           ? `Saw ${tileDescriptions.join(', ')}`
@@ -128,13 +137,13 @@ exports.handler = async (event, limit) => {
           ? JSON.parse(action.tiles_seen)
           : action.tiles_seen;
 
-        for (const tile of tiles) {
-          const coord = `(${tile.x},${tile.y})`;
+        // tiles_seen is stored as an object {x,y: type}, not an array
+        for (const [coord, type] of Object.entries(tiles)) {
           if (!seenCoords.has(coord)) {
             seenCoords.add(coord);
-            if (tile.type === vision.GOAL || tile.type === 'goal') {
+            if (type === vision.GOAL || type === 'goal') {
               tilesDiscovered.goal.push(coord);
-            } else if (tile.type === vision.WALL || tile.type === 'wall') {
+            } else if (type === vision.WALL || type === 'wall') {
               tilesDiscovered.wall.push(coord);
             } else {
               tilesDiscovered.empty.push(coord);

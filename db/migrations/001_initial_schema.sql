@@ -2,12 +2,16 @@
 -- Created: 2025-10-22
 
 -- Maze definitions
+-- Grid tile encoding (stored in grid_data as 2D array of integers):
+--   0 = EMPTY (passable floor)
+--   1 = WALL (impassable, blocks movement and vision)
+--   2 = GOAL (target location, passable)
 CREATE TABLE mazes (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   width INT NOT NULL,
   height INT NOT NULL,
-  grid_data JSONB NOT NULL,        -- 2D array: 0=empty, 1=wall, 2=goal
+  grid_data JSONB NOT NULL,        -- 2D array [y][x] of tile type integers (0=empty, 1=wall, 2=goal)
   see_through_walls BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -43,7 +47,7 @@ CREATE TABLE agent_actions (
   to_x INT,                          -- null if recall_all
   to_y INT,
   success BOOLEAN DEFAULT true,      -- did the action succeed (hit wall = false)
-  tiles_seen JSONB,                  -- What they saw after this action
+  tiles_seen JSONB,                  -- Vision data as object {"x,y": tileType} where tileType is 0/1/2
   tokens_used INT,
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

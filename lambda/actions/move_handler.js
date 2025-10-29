@@ -1,6 +1,11 @@
 // Shared movement handler for all directional moves
 // Called by router.js for move_north, move_south, move_east, move_west
 //
+// Grid Tile Encoding:
+// - 0 = EMPTY (passable)
+// - 1 = WALL (blocks movement and vision)
+// - 2 = GOAL (target location, passable)
+//
 // Flow:
 // 1. Calculate target position based on direction
 // 2. Validate move (check walls, boundaries)

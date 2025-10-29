@@ -25,6 +25,16 @@ SELECT
   (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) as actions,
   (SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id) as turns,
   ROUND(
+    100.0 * (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true)::numeric /
+    NULLIF((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id), 0),
+    0
+  ) || '%' as pct_moves,
+  ROUND(
+    (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true)::numeric /
+    NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
+    1
+  ) as moves_per_turn,
+  ROUND(
     (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
     NULLIF((SELECT MAX(turn_number) FROM agent_actions WHERE experiment_id = experiments.id), 0),
     1
@@ -45,24 +55,24 @@ SELECT
     NULLIF(EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) / 60.0, 0),
     1
   ) as moves_per_min,
-  -- Progress percentage
+  -- Progress percentage (based on successful moves, not total actions)
   CASE
     WHEN model_config->>'max_moves' IS NOT NULL THEN
-      ROUND(100.0 * (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) /
+      ROUND(100.0 * (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true) /
             NULLIF((model_config->>'max_moves')::numeric, 0), 0) || '%'
     ELSE '-'
   END as progress,
-  -- ETA to completion
+  -- ETA to completion (based on successful moves rate)
   CASE
     WHEN completed_at IS NOT NULL THEN '-'
     WHEN model_config->>'max_moves' IS NOT NULL AND
-         (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id) > 0 THEN
+         (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true) > 0 THEN
       CASE
-        WHEN ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)) <= 0 THEN 'done'
+        WHEN ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true)) <= 0 THEN 'done'
         ELSE
           ROUND(
-            ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)) /
-            NULLIF((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id)::numeric /
+            ((model_config->>'max_moves')::numeric - (SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true)) /
+            NULLIF((SELECT COUNT(*) FROM agent_actions WHERE experiment_id = experiments.id AND success = true)::numeric /
                    NULLIF(EXTRACT(EPOCH FROM (NOW() - started_at)) / 60.0, 0), 0)
           )::int || 'm'
       END

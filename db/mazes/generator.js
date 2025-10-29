@@ -1,13 +1,24 @@
 // Maze generator for Oriole project
 // Generates various maze types for testing AI spatial reasoning
+//
+// Grid Tile Encoding (stored in grid_data as integers):
+// - 0 = EMPTY: Passable tile, agents can walk through
+// - 1 = WALL: Impassable tile, blocks movement and vision
+// - 2 = GOAL: Target tile, passable, marks success when agent reaches/sees it
+//
+// The encoding is consistent across:
+// - Database storage (mazes.grid_data JSON column)
+// - Vision system (lambda/shared/vision.js constants)
+// - Movement validation (lambda/actions/move_handler.js)
+// - Agent perception (visible tiles returned as "empty", "wall", or "GOAL")
 
 const fs = require('fs');
 const path = require('path');
 
 const GRID_SIZE = 60;
-const EMPTY = 0;
-const WALL = 1;
-const GOAL = 2;
+const EMPTY = 0;  // Passable floor tile
+const WALL = 1;   // Impassable obstacle
+const GOAL = 2;   // Target location (passable)
 
 // Create empty grid
 function createEmptyGrid() {

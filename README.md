@@ -328,12 +328,26 @@ aws ssm put-parameter \
 - **Line-of-Sight**: Walls block vision
 - **Starting Knowledge**: Grid size (60x60), starting position
 
+### Grid Encoding
+Maze tiles are stored as integers in the database (`mazes.grid_data`) and interpreted consistently across all system components:
+
+- **0 = EMPTY**: Passable floor tiles. Agents can walk through and see past them.
+- **1 = WALL**: Impassable obstacles. Blocks movement and terminates vision rays.
+- **2 = GOAL**: Target location. Passable tile that marks experiment success when seen or reached.
+
+When agents receive vision data, these numeric codes are converted to descriptive strings:
+- `0` → `"empty"`
+- `1` → `"wall"`
+- `2` → `"GOAL"`
+
+**Goal Location:** For most mazes, the GOAL tile is placed near (55, 55) - the opposite corner from start position (2, 2). The exact position varies based on maze layout, searching a 5×5 area for the first available empty spot.
+
 ### Constraints
 - No `getCurrentLocation` tool (agents must track position mentally)
 - Walls block movement and vision
 - Grid boundaries are hard limits
-- **Max Moves**: 100 actions per experiment (configurable)
-- **Max Duration**: 30 minutes per experiment (configurable)
+- **Max Moves**: 200 actions per experiment (configurable via `/oriole/max-moves`)
+- **Max Duration**: 10 minutes per experiment (configurable)
 
 ## Data Model Glossary
 

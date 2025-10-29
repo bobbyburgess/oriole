@@ -282,6 +282,7 @@ async function executeAction(action, args, experimentId, turnNumber, stepNumber,
             properties: [
               { name: 'experimentId', type: 'integer', value: experimentId },
               { name: 'reasoning', type: 'string', value: args.reasoning || '' },
+              { name: 'depth', type: 'integer', value: args.depth || null },
               { name: 'turnNumber', type: 'integer', value: turnNumber },
               { name: 'stepNumber', type: 'integer', value: stepNumber },
               { name: 'assistantMessage', type: 'string', value: assistantMessage || '' }
@@ -423,17 +424,32 @@ Use the provided tools to navigate and explore. You will receive vision feedback
       console.log(`[TIMING] Ollama call completed in ${elapsed}ms`);
 
       // Track token usage
-      // FAIL FAST: Token counts are critical for cost tracking and experiment analysis
+      // Vision/multimodal models (llava, phi4, etc.) may not return token counts in text-only mode
+      // Default to null for these models rather than failing the experiment
+      const isVisionModel = modelName.includes('llava') || modelName.includes('phi4');
+
       if (response.prompt_eval_count === undefined || response.prompt_eval_count === null) {
-        throw new Error(`Missing prompt_eval_count in Ollama response for model ${modelName}`);
+        if (isVisionModel) {
+          console.log(`Vision model ${modelName} did not return prompt_eval_count - defaulting to null`);
+        } else {
+          // FAIL FAST: Token counts are critical for cost tracking and experiment analysis (text-only models)
+          throw new Error(`Missing prompt_eval_count in Ollama response for model ${modelName}`);
+        }
       }
       if (response.eval_count === undefined || response.eval_count === null) {
-        throw new Error(`Missing eval_count in Ollama response for model ${modelName}`);
+        if (isVisionModel) {
+          console.log(`Vision model ${modelName} did not return eval_count - defaulting to null`);
+        } else {
+          throw new Error(`Missing eval_count in Ollama response for model ${modelName}`);
+        }
       }
 
-      totalInputTokens += response.prompt_eval_count;
-      totalOutputTokens += response.eval_count;
-      console.log(`Token usage: ${response.prompt_eval_count} in, ${response.eval_count} out`);
+      // Add token counts if available (may be undefined for vision models)
+      const promptTokens = response.prompt_eval_count || 0;
+      const outputTokens = response.eval_count || 0;
+      totalInputTokens += promptTokens;
+      totalOutputTokens += outputTokens;
+      console.log(`Token usage: ${promptTokens} in, ${outputTokens} out`);
 
       // Add assistant's message to conversation history
       const assistantMessage = response.message;
