@@ -213,8 +213,79 @@ exports.handler = async (event) => {
       console.log('Bedrock model config captured (for tracking only):', modelConfig);
     }
 
-    // Create experiment record
+    /**
+     * Smart Cooldown: Only delay when switching models AND insufficient time has passed
+     *
+     * Purpose: Ollama loads one model at a time into GPU memory. When switching models,
+     * Ollama needs time to unload the previous model and load the new one. Without cooldown,
+     * rapid model switches can cause resource contention.
+     *
+     * Traditional approach: Wait cooldown-seconds after EVERY experiment
+     * Problem: Wastes time when running batches of the same model (no model switch)
+     *
+     * Smart approach: Only wait when:
+     * 1. Model changed from previous experiment (model switch detected)
+     * 2. Not enough time has elapsed since last completion (still "warm")
+     *
+     * Examples:
+     * - qwen → qwen (5s later): No cooldown (same model)
+     * - qwen → llama (5s later): Cooldown needed (model switch, still warm)
+     * - qwen → llama (60s later): No cooldown (model switch, but already cool)
+     * - First experiment: No cooldown (no previous experiment)
+     *
+     * Configuration: /oriole/experiments/cooldown-seconds (default: 10)
+     */
     const db = await getDbClient();
+    let needsCooldown = false;
+
+    try {
+      // Query last completed experiment to check model name and completion time
+      const lastExpResult = await db.query(
+        `SELECT model_name, completed_at
+         FROM experiments
+         WHERE completed_at IS NOT NULL
+         ORDER BY id DESC
+         LIMIT 1`
+      );
+
+      if (lastExpResult.rows.length > 0) {
+        const lastExp = lastExpResult.rows[0];
+
+        // Check if model has changed from last experiment
+        if (lastExp.model_name !== modelName) {
+          // Model switch detected - check if enough time has passed
+          const cooldownSeconds = await ssmClient.send(
+            new GetParameterCommand({ Name: '/oriole/experiments/cooldown-seconds' })
+          ).then(r => parseInt(r.Parameter.Value));
+
+          // Calculate time elapsed since last experiment completed
+          const elapsedMs = Date.now() - new Date(lastExp.completed_at).getTime();
+          const elapsedSeconds = elapsedMs / 1000;
+
+          // Only need cooldown if elapsed time < required cooldown period
+          needsCooldown = elapsedSeconds < cooldownSeconds;
+
+          if (needsCooldown) {
+            console.log(`Model switch detected (${lastExp.model_name} → ${modelName}). Only ${elapsedSeconds.toFixed(1)}s elapsed, need ${cooldownSeconds}s cooldown.`);
+          } else {
+            console.log(`Model switch detected (${lastExp.model_name} → ${modelName}), but ${elapsedSeconds.toFixed(1)}s elapsed >= ${cooldownSeconds}s cooldown. No wait needed.`);
+          }
+        } else {
+          // Same model - no cooldown needed (model already loaded)
+          console.log(`Same model as last run (${modelName}). No cooldown needed.`);
+        }
+      } else {
+        // Clean database - no previous experiments, no cooldown needed
+        console.log('No previous experiments found. No cooldown needed.');
+      }
+    } catch (error) {
+      // If cooldown check fails, default to no cooldown (fail open, not fail closed)
+      // This ensures experiments can continue even if cooldown logic has issues
+      console.warn('Failed to check cooldown status, defaulting to no cooldown:', error.message);
+      needsCooldown = false;
+    }
+
+    // Create experiment record
     const result = await db.query(
       `INSERT INTO experiments
        (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at, model_config)
@@ -241,7 +312,8 @@ exports.handler = async (event) => {
       currentY: startY,
       turnNumber: 1,  // Initialize turn counter
       llmProvider,  // Pass through to AgentProviderRouter choice state
-      config  // Pass config through for atomic configuration (no Parameter Store race conditions)
+      config,  // Pass config through for atomic configuration (no Parameter Store race conditions)
+      needsCooldown  // Pass through to CooldownRouter choice state
     };
 
   } catch (error) {
