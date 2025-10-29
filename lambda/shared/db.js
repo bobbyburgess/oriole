@@ -158,60 +158,17 @@ async function getNextStepNumber(experimentId) {
 }
 
 // Log an agent action
-// inputTokens and outputTokens are optional - they represent the TURN's total tokens, stored with each action in that turn
-async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber, inputTokens = null, outputTokens = null) {
+// assistantMessage: The full message.content from the LLM (optional)
+// reasoning: The tool call's arguments.reasoning field (optional)
+// inputTokens and outputTokens: TURN's total tokens, stored with each action in that turn (optional)
+async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber, inputTokens = null, outputTokens = null, assistantMessage = null) {
   const db = await getDbClient();
   await db.query(
     `INSERT INTO agent_actions
-     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number, input_tokens, output_tokens)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, JSON.stringify(tilesSeen), turnNumber, inputTokens, outputTokens]
+     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number, input_tokens, output_tokens, assistant_message)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, JSON.stringify(tilesSeen), turnNumber, inputTokens, outputTokens, assistantMessage]
   );
-}
-
-// Get all tiles the agent has seen across all actions
-// Used by recall_all to provide spatial memory
-//
-// Parameters:
-//   experimentId - The experiment to get tiles for
-//   maxRecentActions - Optional limit on how many recent actions to include (default: all)
-//
-// Returns a merged map of all tiles observed: {"x,y": tileType, ...}
-// If a tile was seen multiple times, the latest observation wins (Object.assign)
-//
-// CONTEXT MANAGEMENT: Limiting to recent actions prevents context window overflow
-// Example: maxRecentActions=50 with ~2 tiles/action = ~100 unique tiles in recall
-async function getAllSeenTiles(experimentId, maxRecentActions = null) {
-  const db = await getDbClient();
-
-  // Build query with optional LIMIT for recent actions only
-  let query = `SELECT tiles_seen FROM agent_actions
-               WHERE experiment_id = $1
-               ORDER BY step_number DESC`;
-
-  const params = [experimentId];
-
-  if (maxRecentActions !== null) {
-    // LIMIT to most recent N actions (DESC order), then reverse for chronological merge
-    query += ` LIMIT $2`;
-    params.push(maxRecentActions);
-  }
-
-  const result = await db.query(query, params);
-
-  // Merge all tiles_seen JSON objects into a single map
-  // Process in chronological order (reverse if we used DESC + LIMIT)
-  // Each action's tiles_seen: {"x,y": 0|1|2, ...} (EMPTY|WALL|GOAL)
-  const allTiles = {};
-  const rows = maxRecentActions !== null ? result.rows.reverse() : result.rows;
-
-  rows.forEach(row => {
-    if (row.tiles_seen) {
-      Object.assign(allTiles, row.tiles_seen);
-    }
-  });
-
-  return allTiles;
 }
 
 // Update goal_found flag when goal is detected
@@ -243,7 +200,6 @@ module.exports = {
   getCurrentPosition,
   getNextStepNumber,
   logAction,
-  getAllSeenTiles,
   acquireExperimentLock,
   releaseExperimentLock,
   updateGoalFound,

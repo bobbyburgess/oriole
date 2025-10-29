@@ -27,7 +27,7 @@ const DIRECTIONS = {
 async function handleMove(direction, event) {
   try {
     // Parse event from Bedrock Agent
-    const { experimentId, reasoning, turnNumber } = event;
+    const { experimentId, reasoning, turnNumber, assistantMessage } = event;
 
     if (!experimentId) {
       return {
@@ -92,7 +92,10 @@ async function handleMove(direction, event) {
       actualY,
       success,
       visibleTiles,
-      turnNumber || null
+      turnNumber || null,
+      null, // inputTokens (not available in handler)
+      null, // outputTokens (not available in handler)
+      assistantMessage || null // Full LLM response
     );
 
     // Check if agent found the goal

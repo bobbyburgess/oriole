@@ -269,7 +269,7 @@ async function callOllamaChat(endpoint, model, messages, apiKey, tools, options,
  *     {name: 'turnNumber', type: 'integer', value: 1}
  *   ]
  */
-async function executeAction(action, args, experimentId, turnNumber, stepNumber) {
+async function executeAction(action, args, experimentId, turnNumber, stepNumber, assistantMessage = null) {
   const command = new InvokeCommand({
     FunctionName: process.env.ACTION_ROUTER_FUNCTION_NAME,
     Payload: JSON.stringify({
@@ -283,7 +283,8 @@ async function executeAction(action, args, experimentId, turnNumber, stepNumber)
               { name: 'experimentId', type: 'integer', value: experimentId },
               { name: 'reasoning', type: 'string', value: args.reasoning || '' },
               { name: 'turnNumber', type: 'integer', value: turnNumber },
-              { name: 'stepNumber', type: 'integer', value: stepNumber }
+              { name: 'stepNumber', type: 'integer', value: stepNumber },
+              { name: 'assistantMessage', type: 'string', value: assistantMessage || '' }
             ]
           }
         }
@@ -457,8 +458,8 @@ Use the provided tools to navigate and explore. You will receive vision feedback
           `INSERT INTO agent_actions (
             experiment_id, turn_number, step_number, action_type,
             from_x, from_y, to_x, to_y, success,
-            input_tokens, output_tokens, timestamp
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+            input_tokens, output_tokens, assistant_message, timestamp
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
           [
             experimentId,
             turnNumber,
@@ -470,7 +471,8 @@ Use the provided tools to navigate and explore. You will receive vision feedback
             currentY,
             false, // success = false for no-op
             response.prompt_eval_count,
-            response.eval_count
+            response.eval_count,
+            assistantMessage.content || null // Full LLM response for no-op turns
           ]
         );
         console.log('Recorded no-op turn in database');
@@ -502,7 +504,8 @@ Use the provided tools to navigate and explore. You will receive vision feedback
           toolArgs,
           experimentId,
           turnNumber,
-          actionCount
+          actionCount,
+          assistantMessage.content || null // Pass full LLM response for logging
         );
 
         console.log(`    Result: ${result.success ? '✅' : '❌'} ${result.message || 'Unknown'}`);

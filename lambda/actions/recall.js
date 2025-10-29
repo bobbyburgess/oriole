@@ -58,7 +58,7 @@ async function getMaxRecallDepth() {
  */
 exports.handler = async (event, limit) => {
   try {
-    const { experimentId, reasoning, turnNumber } = event;
+    const { experimentId, reasoning, turnNumber, assistantMessage } = event;
 
     if (!experimentId) {
       return {
@@ -159,7 +159,10 @@ exports.handler = async (event, limit) => {
       null,
       true, // Always succeeds
       {}, // Empty tiles_seen (not using this field for recall_movement_history)
-      turnNumber || null
+      turnNumber || null,
+      null, // inputTokens (not available in handler)
+      null, // outputTokens (not available in handler)
+      assistantMessage || null // Full LLM response
     );
 
     // Build path summary
