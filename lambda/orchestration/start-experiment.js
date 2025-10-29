@@ -150,12 +150,10 @@ exports.handler = async (event) => {
       // Fetch non-model params from Parameter Store (these don't change per-experiment)
       // FAIL FAST: If any parameter is missing, experiment should fail immediately
       // rather than storing null values that cause undefined behavior later
-      let recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange;
+      let recallInterval, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange;
       try {
-        [recallInterval, maxRecallActions, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange] = await Promise.all([
+        [recallInterval, maxMoves, maxDurationMinutes, maxActionsPerTurn, visionRange] = await Promise.all([
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/recall-interval' }))
-            .then(r => parseInt(r.Parameter.Value)),
-          ssmClient.send(new GetParameterCommand({ Name: '/oriole/experiments/max-recall-actions' }))
             .then(r => parseInt(r.Parameter.Value)),
           ssmClient.send(new GetParameterCommand({ Name: '/oriole/max-moves' }))
             .then(r => parseInt(r.Parameter.Value)),
@@ -192,7 +190,6 @@ exports.handler = async (event) => {
         repeat_penalty: config.repeatPenalty,
         // System config from Parameter Store (stable across experiments)
         recall_interval: recallInterval,
-        max_recall_actions: maxRecallActions,
         max_moves: maxMoves,
         max_duration_minutes: maxDurationMinutes,
         max_actions_per_turn: maxActionsPerTurn,
