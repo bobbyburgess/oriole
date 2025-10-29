@@ -21,8 +21,8 @@ const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
 
 // Cache prompts to avoid repeated SSM calls
-// Note: Model options and maxActionsPerTurn are NOT cached to avoid stale values
-// when parameters are updated in Parameter Store
+// Note: Model options are fetched from event config (not Parameter Store)
+// to ensure atomic, race-condition-free configuration
 const promptCache = {};
 
 async function getPrompt(promptVersion) {
@@ -39,19 +39,6 @@ async function getPrompt(promptVersion) {
   return promptCache[promptVersion];
 }
 
-/**
- * Get max actions per turn from Parameter Store
- *
- * Controls how many tool calls Ollama can make in a single turn before
- * returning control to the orchestration loop.
- *
- * Special values:
- * - 0 = Unlimited actions (useful for free local Ollama)
- * - N > 0 = Limit to N actions per turn
- *
- * NOT cached - fetches from Parameter Store every time to ensure
- * parameter updates take effect immediately (even on warm containers).
- */
 // REMOVED: getMaxActionsPerTurn() - now using value from model_config stored at experiment start
 // This eliminates fallback to default=50 and ensures atomic configuration
 
@@ -296,7 +283,8 @@ Use the provided tools to navigate and explore. You will receive vision feedback
 
     let actionCount = 0;
 
-    // Get max actions from experiment config (stored at experiment start)
+    // Get max actions from experiment config stored in database (atomic configuration)
+    // Previously fetched from Parameter Store with fallback to 50 - now stored at experiment start
     // FAIL FAST: Don't fall back to defaults - use the config that was validated and stored
     const db = await getDbClient();
     const configResult = await db.query(
