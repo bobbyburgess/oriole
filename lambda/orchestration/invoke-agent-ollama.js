@@ -335,8 +335,8 @@ exports.handler = async (event) => {
   try {
     const {
       experimentId,
-      currentX,
-      currentY,
+      currentX: startX,
+      currentY: startY,
       goalDescription,
       promptVersion = 'v1',
       modelName = 'llama3.2:latest',
@@ -344,7 +344,7 @@ exports.handler = async (event) => {
       config = null  // Optional config passed in event
     } = event;
 
-    console.log(`Ollama invocation for experiment ${experimentId} at position (${currentX}, ${currentY}) using prompt ${promptVersion}`);
+    console.log(`Ollama invocation for experiment ${experimentId} at position (${startX}, ${startY}) using prompt ${promptVersion}`);
 
     // Get the prompt text for this version
     const promptText = await getPrompt(promptVersion);
@@ -353,6 +353,10 @@ exports.handler = async (event) => {
     const historyLimit = await getSystemPromptHistoryActions();
     const explorationHistory = await getExplorationHistory(experimentId, historyLimit);
     console.log(`Including exploration history: ${explorationHistory ? 'yes' : 'no'} (limit: ${historyLimit} actions)`);
+
+    // Track current position throughout turn (updates after each action)
+    let currentX = startX;
+    let currentY = startY;
 
     // Construct the initial system message with exploration history
     let systemMessage = `You are continuing a grid exploration experiment.
@@ -543,6 +547,14 @@ Use the provided tools to navigate and explore. You will receive vision feedback
         console.log(`    Result: ${result.success ? '✅' : '❌'} ${result.message || 'Unknown'}`);
         if (result.visible) {
           console.log(`    Vision: ${result.visible.substring(0, 100)}...`);
+        }
+
+        // Update current position after action (critical for multi-action turns)
+        // Prevents teleportation bug when logging no_tool_call actions
+        if (result.position) {
+          currentX = result.position.x;
+          currentY = result.position.y;
+          console.log(`    Position updated to (${currentX}, ${currentY})`);
         }
 
         // Check if goal found
