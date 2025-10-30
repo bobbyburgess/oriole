@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# QWEN A/B TEST - BATCH 1
+# QWEN A/B TEST - BATCH 3
 # Comparing qwen2.5:14b vs qwen2.5:7b
 # Configuration: temp=0, 500 moves, v7-neutral prompt
 # Expected runtime: ~18-20 hours total (60-90 min per experiment)
@@ -11,10 +11,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMMENT="QWEN A/B TEST, BATCH 1"
+COMMENT="QWEN A/B TEST, BATCH 3"
 
 echo "=========================================="
-echo "QWEN A/B TEST - BATCH 1"
+echo "QWEN A/B TEST - BATCH 3"
 echo "=========================================="
 echo ""
 echo "Configuration:"
