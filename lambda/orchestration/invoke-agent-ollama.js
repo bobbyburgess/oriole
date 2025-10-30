@@ -238,7 +238,23 @@ async function callOllamaChat(endpoint, model, messages, apiKey, tools, options,
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
-          resolve(JSON.parse(data));
+          const parsed = JSON.parse(data);
+
+          // Check HTTP status code - non-200 responses indicate errors
+          if (res.statusCode !== 200) {
+            const errorMsg = parsed.error || `HTTP ${res.statusCode}`;
+            reject(new Error(`Ollama/proxy error (${res.statusCode}): ${errorMsg}`));
+            return;
+          }
+
+          // Check for error responses in the body (200 OK but error field present)
+          // This catches authentication errors, model not found, etc.
+          if (parsed.error) {
+            reject(new Error(`Ollama/proxy error: ${parsed.error}`));
+            return;
+          }
+
+          resolve(parsed);
         } catch (e) {
           reject(new Error(`Failed to parse Ollama response: ${e.message}`));
         }

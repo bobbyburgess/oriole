@@ -288,11 +288,12 @@ exports.handler = async (event) => {
     // Create experiment record
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at, model_config)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
+       (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at, model_config, comment)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)
        RETURNING id`,
       [agentId, modelName, promptVersion, mazeId, startX, startY,
-       modelConfig ? JSON.stringify(modelConfig) : null]
+       modelConfig ? JSON.stringify(modelConfig) : null,
+       payload.comment || null]
     );
 
     const experimentId = result.rows[0].id;

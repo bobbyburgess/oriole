@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to trigger a maze experiment via EventBridge
-# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from-experiment-id]
+# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from-experiment-id] [num-ctx] [temperature] [num-predict] [comment]
 
 AGENT_ID=$1
 AGENT_ALIAS_ID=$2
@@ -12,6 +12,7 @@ RESUME_FROM=${6:-""}  # Optional resume-from experiment ID
 NUM_CTX=${7:-""}         # Optional: context window size
 TEMPERATURE=${8:-""}     # Optional: sampling temperature
 NUM_PREDICT=${9:-""}     # Optional: max output tokens
+COMMENT=${10:-""}        # Optional: comment for labeling experiment batches
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
   echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [max-context-window] [temperature] [max-output-tokens]"
@@ -67,6 +68,14 @@ CONFIG_JSON=",
     \"maxOutputTokens\": $NUM_PREDICT
   }"
 
+# Add comment if provided
+if [ -n "$COMMENT" ]; then
+  COMMENT_JSON=",
+  \"comment\": \"$COMMENT\""
+else
+  COMMENT_JSON=""
+fi
+
 # Build event detail
 if [ -n "$RESUME_FROM" ]; then
   EVENT_DETAIL=$(cat <<EOF
@@ -79,7 +88,7 @@ if [ -n "$RESUME_FROM" ]; then
   "startX": 2,
   "startY": 2,
   "resumeFromExperimentId": $RESUME_FROM,
-  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON
+  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON$COMMENT_JSON
 }
 EOF
 )
@@ -93,7 +102,7 @@ else
   "mazeId": "$MAZE_ID",
   "startX": 2,
   "startY": 2,
-  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON
+  "llmProvider": "$LLM_PROVIDER"$CONFIG_JSON$COMMENT_JSON
 }
 EOF
 )
