@@ -16,7 +16,7 @@ const https = require('https');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 const { getOllamaTools } = require('../shared/tools');
-const { getDbClient } = require('../shared/db');
+const db = require('../shared/db');
 
 const ssmClient = new SSMClient();
 const lambdaClient = new LambdaClient();
@@ -136,10 +136,10 @@ async function getSystemPromptHistoryActions() {
  * @returns {Promise<string>} Formatted exploration history
  */
 async function getExplorationHistory(experimentId, limit) {
-  const db = await getDbClient();
+  const dbClient = await db.getDbClient();
 
   // Fetch last N actions with position and vision data
-  const result = await db.query(
+  const result = await dbClient.query(
     `SELECT
        action_type,
        from_x,
@@ -407,8 +407,8 @@ Use the provided tools to navigate and explore. You will receive vision feedback
     // Get max actions from experiment config stored in database (atomic configuration)
     // Previously fetched from Parameter Store with fallback to 50 - now stored at experiment start
     // FAIL FAST: Don't fall back to defaults - use the config that was validated and stored
-    const db = await getDbClient();
-    const configResult = await db.query(
+    const dbClient = await db.getDbClient();
+    const configResult = await dbClient.query(
       'SELECT model_config FROM experiments WHERE id = $1',
       [experimentId]
     );
@@ -489,8 +489,9 @@ Use the provided tools to navigate and explore. You will receive vision feedback
         console.log('Assistant response:', assistantMessage.content);
 
         // Record no-op turn in database for tracking model reliability
-        const db = await getDbClient();
-        await db.query(
+        const dbClient = await db.getDbClient();
+        const noOpStepNumber = await db.getNextStepNumber(experimentId);
+        await dbClient.query(
           `INSERT INTO agent_actions (
             experiment_id, turn_number, step_number, action_type,
             from_x, from_y, to_x, to_y, success,
@@ -499,7 +500,7 @@ Use the provided tools to navigate and explore. You will receive vision feedback
           [
             experimentId,
             turnNumber,
-            actionCount + 1, // step_number for this no-op
+            noOpStepNumber, // Get next step number from database (not turn-local count)
             'no_tool_call',
             currentX,
             currentY,
