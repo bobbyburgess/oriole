@@ -143,15 +143,24 @@ ollama pull deepseek-r1:70b
 
 The auth proxy adds API key authentication to Ollama's API.
 
-**Install dependencies:**
+**Repository:** https://github.com/bobbyburgess/ollama-proxy
+
+**Clone and setup:**
 ```bash
-cd tools
-npm install express http-proxy-middleware
+# Clone the proxy repository
+git clone https://github.com/bobbyburgess/ollama-proxy.git
+cd ollama-proxy
+
+# Install dependencies
+npm install
+
+# Copy config template
+cp config.json.example config.json
 ```
 
 **Generate API key:**
 ```bash
-openssl rand -base64 32
+openssl rand -hex 32
 # Save this, you'll need it for Parameter Store
 ```
 
@@ -163,36 +172,46 @@ brew install certbot
 # Get certificates for your domain (e.g., sf1.tplinkdns.com)
 sudo certbot certonly --standalone -d sf1.tplinkdns.com
 
-# Copy certificates to accessible location
-sudo cp /etc/letsencrypt/live/sf1.tplinkdns.com/privkey.pem ~/certs/
-sudo cp /etc/letsencrypt/live/sf1.tplinkdns.com/fullchain.pem ~/certs/
-sudo chown $USER ~/certs/*.pem
+# Copy certificates to certs directory
+mkdir -p certs
+sudo cp /etc/letsencrypt/live/sf1.tplinkdns.com/privkey.pem certs/
+sudo cp /etc/letsencrypt/live/sf1.tplinkdns.com/fullchain.pem certs/
+sudo chown $USER certs/*.pem
 ```
 
-**Start auth proxy (pointing to Windows Ollama):**
-```bash
-export OLLAMA_API_KEY="your-32-char-api-key-here"
-export SSL_KEY_PATH="$HOME/certs/privkey.pem"
-export SSL_CERT_PATH="$HOME/certs/fullchain.pem"
-export OLLAMA_PORT=11435
-export OLLAMA_TARGET="http://192.168.0.208:11434"  # Your Windows PC's IP
+**Configure config.json:**
+```json
+{
+  "apiKey": "your-64-char-hex-api-key-here",
+  "port": 11435,
+  "ollamaTarget": "http://192.168.0.208:11434",
+  "ssl": {
+    "keyPath": "./certs/privkey.pem",
+    "certPath": "./certs/fullchain.pem"
+  }
+}
+```
 
-node tools/ollama-auth-proxy.js
+**Start auth proxy:**
+```bash
+node index.js
 ```
 
 You should see:
 ```
 🔒 Ollama auth proxy (HTTPS) listening on 0.0.0.0:11435
 Proxying to: http://192.168.0.208:11434
-API key configured: ********...
-SSL cert: /Users/bobbyburgess/certs/fullchain.pem
-Logging to: /Users/bobbyburgess/Documents/code/oriole/tools/ollama-proxy.log
+API key configured: f1217bd8...
+SSL cert: ./certs/fullchain.pem
+Logging to: ollama-proxy.log
 ```
 
-**Note:** `OLLAMA_TARGET` can point to:
-- `http://localhost:11434` - Ollama running on same Mac as proxy
+**Note:** `ollamaTarget` can point to:
+- `http://localhost:11434` - Ollama running on same machine as proxy
 - `http://192.168.0.x:11434` - Ollama running on different machine (Windows, Linux, etc.)
 - Any internal network IP where Ollama is accessible
+
+See the [ollama-proxy README](https://github.com/bobbyburgess/ollama-proxy) for complete setup instructions.
 
 ### 4. Configure Router Port Forwarding
 
@@ -515,9 +534,10 @@ From actual testing on maze 1:
    aws logs tail /aws/lambda/OrioleStack-InvokeAgentOllamaFunction... --follow --profile bobby
    ```
 
-6. **Check proxy logs (on Mac Mini):**
+6. **Check proxy logs (in ollama-proxy directory):**
    ```bash
-   tail -f /Users/bobbyburgess/Documents/code/oriole/tools/ollama-proxy.log
+   cd ollama-proxy
+   tail -f ollama-proxy.log
    ```
 
 ### "No tool calls requested"
