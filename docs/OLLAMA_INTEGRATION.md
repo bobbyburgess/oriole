@@ -123,21 +123,58 @@ Verify it's running:
 curl http://localhost:11434/api/tags
 ```
 
-### 2. Pull a Model
+### 2. Pull a Model and Create 128K Context Variants
 
 ```bash
-# Start with a capable model (llama3.2 is too small for good tool use)
-ollama pull llama3.3:70b
+# Pull base models
+ollama pull qwen2.5:7b
+ollama pull qwen2.5:14b
 
-# Or try these alternatives:
+# Or larger models for better performance:
+ollama pull llama3.3:70b
 ollama pull qwen2.5:72b
-ollama pull deepseek-r1:70b
+```
+
+**Model Terminology:**
+- **7b, 14b, 72b**: Number of parameters in billions (model size/capability) - **NOT** context window
+- **128k**: Context window size in tokens (how much text the model can "see" at once)
+- Parameters are fixed (determined during training), context window is configurable
+
+**Create 128K context variants** (allows agent to see ~400+ turns of history):
+
+```bash
+# macOS/Linux
+echo "FROM qwen2.5:14b
+PARAMETER num_ctx 131072" > Modelfile-14b-128k
+ollama create qwen2.5:14b-128k -f Modelfile-14b-128k
+
+echo "FROM qwen2.5:7b
+PARAMETER num_ctx 131072" > Modelfile-7b-128k
+ollama create qwen2.5:7b-128k -f Modelfile-7b-128k
+
+# Verify
+ollama show qwen2.5:14b-128k --modelfile | grep num_ctx
+ollama show qwen2.5:7b-128k --modelfile | grep num_ctx
+```
+
+**PowerShell (Windows):**
+```powershell
+"FROM qwen2.5:14b`nPARAMETER num_ctx 131072" | Out-File -Encoding ASCII Modelfile-14b-128k
+ollama create qwen2.5:14b-128k -f Modelfile-14b-128k
+
+"FROM qwen2.5:7b`nPARAMETER num_ctx 131072" | Out-File -Encoding ASCII Modelfile-7b-128k
+ollama create qwen2.5:7b-128k -f Modelfile-7b-128k
+
+# Verify
+ollama show qwen2.5:14b-128k --modelfile | Select-String "num_ctx"
+ollama show qwen2.5:7b-128k --modelfile | Select-String "num_ctx"
 ```
 
 **Model Requirements:**
 - Must support function calling
-- Should be 70B+ parameters for good tool use
-- Smaller models (3B-14B) struggle with vision feedback integration
+- Recommended: 7B+ parameters for basic tool use, 14B+ for better reasoning
+- Larger models (70B+) provide best performance but slower inference
+- Custom context variants persist through reboots (no re-creation needed)
 
 ### 3. Set Up HTTPS Auth Proxy
 

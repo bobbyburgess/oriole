@@ -270,16 +270,26 @@ curl http://localhost:11434/api/version
 
 ## Installed Models
 
-As of 2025-10-28, the following models are installed and support Ollama tool calling:
+As of 2025-10-30, the following models are installed and support Ollama tool calling:
 
 - llama3.1:8b ✅ Function calling supported
+- llama3.1:8b-128k ✅ Custom variant with 128K context
 - llama3.3:70b
+- mistral-nemo:12b-128k ✅ Custom variant with 128K context
 - mistral-small:latest
 - mixtral:8x7b
 - qwen2.5:1.5b
 - qwen2.5:3b
 - qwen2.5:7b ✅ Function calling supported
+- qwen2.5:7b-128k ✅ Custom variant with 128K context
+- qwen2.5:14b-128k ✅ Custom variant with 128K context
 - qwen2.5:72b
+- qwen2.5-coder:7b-128k ✅ Custom variant with 128K context
+
+**Model Terminology:**
+- **7b, 14b, 72b**: Number of parameters in billions (model size/capability) - **NOT** context window
+- **128k**: Context window size in tokens (how much text the model can "see" at once)
+- Example: `qwen2.5:7b-128k` = 7 billion parameters + 128K context window
 
 **Removed models** (don't support Ollama function calling):
 - codellama:13b - No tool support
@@ -288,6 +298,37 @@ As of 2025-10-28, the following models are installed and support Ollama tool cal
 - phi4:latest - No tool support
 - qwen2.5:14b - Invalid response format (no message field)
 - qwen2.5-coder:32b - No tool support
+
+## Creating Custom Context Window Models
+
+Ollama models have a default context window (usually 32K). To create variants with larger context (e.g., 128K):
+
+**PowerShell commands:**
+```powershell
+# Create 14b with 128K context
+"FROM qwen2.5:14b`nPARAMETER num_ctx 131072" | Out-File -Encoding ASCII Modelfile-14b-128k
+ollama create qwen2.5:14b-128k -f Modelfile-14b-128k
+
+# Create 7b with 128K context
+"FROM qwen2.5:7b`nPARAMETER num_ctx 131072" | Out-File -Encoding ASCII Modelfile-7b-128k
+ollama create qwen2.5:7b-128k -f Modelfile-7b-128k
+
+# Verify the configuration
+ollama show qwen2.5:14b-128k --modelfile | Select-String "num_ctx"
+ollama show qwen2.5:7b-128k --modelfile | Select-String "num_ctx"
+```
+
+**Expected output:**
+```
+PARAMETER num_ctx 131072
+```
+
+**Important notes:**
+- The `-128k` variant downloads **no additional data** - it's just the base model with a different context parameter
+- Context window only affects **runtime RAM usage**, not download size
+- Larger context = more memory needed during inference
+- 128K context (131,072 tokens) allows agents to see ~400+ turns of maze navigation history
+- These custom models **persist through reboots** (stored in `C:\Users\<username>\.ollama\models\`)
 
 ## References
 
