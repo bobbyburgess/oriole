@@ -161,13 +161,39 @@ async function getNextStepNumber(experimentId) {
 // assistantMessage: The full message.content from the LLM (optional)
 // reasoning: The tool call's arguments.reasoning field (optional)
 // inputTokens and outputTokens: TURN's total tokens, stored with each action in that turn (optional)
-async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber, inputTokens = null, outputTokens = null, assistantMessage = null) {
+// ollamaMetrics: Ollama-specific performance metrics (optional, NULL for Bedrock)
+//   - inferenceDurationMs: total_duration in milliseconds
+//   - promptEvalDurationMs: prompt_eval_duration in milliseconds
+//   - evalDurationMs: eval_duration in milliseconds
+//   - tokensPerSecond: calculated generation speed
+//   - doneReason: why generation stopped ("stop", "length", etc.)
+async function logAction(experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, tilesSeen, turnNumber, inputTokens = null, outputTokens = null, assistantMessage = null, ollamaMetrics = null) {
   const db = await getDbClient();
   await db.query(
     `INSERT INTO agent_actions
-     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number, input_tokens, output_tokens, assistant_message)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-    [experimentId, stepNumber, actionType, reasoning, fromX, fromY, toX, toY, success, JSON.stringify(tilesSeen), turnNumber, inputTokens, outputTokens, assistantMessage]
+     (experiment_id, step_number, action_type, reasoning, from_x, from_y, to_x, to_y, success, tiles_seen, turn_number, input_tokens, output_tokens, assistant_message, inference_duration_ms, prompt_eval_duration_ms, eval_duration_ms, tokens_per_second, done_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+    [
+      experimentId,
+      stepNumber,
+      actionType,
+      reasoning,
+      fromX,
+      fromY,
+      toX,
+      toY,
+      success,
+      JSON.stringify(tilesSeen),
+      turnNumber,
+      inputTokens,
+      outputTokens,
+      assistantMessage,
+      ollamaMetrics?.inferenceDurationMs || null,
+      ollamaMetrics?.promptEvalDurationMs || null,
+      ollamaMetrics?.evalDurationMs || null,
+      ollamaMetrics?.tokensPerSecond || null,
+      ollamaMetrics?.doneReason || null
+    ]
   );
 }
 
@@ -193,6 +219,31 @@ async function updateTurnTokens(experimentId, turnNumber, inputTokens, outputTok
   );
 }
 
+// Update all actions in a turn with Ollama performance metrics
+// Called from invoke-agent-ollama after each turn completes
+// All actions in the turn get the same metrics since they came from one Ollama API call
+async function updateTurnMetrics(experimentId, turnNumber, metrics) {
+  const db = await getDbClient();
+  await db.query(
+    `UPDATE agent_actions
+     SET inference_duration_ms = $1,
+         prompt_eval_duration_ms = $2,
+         eval_duration_ms = $3,
+         tokens_per_second = $4,
+         done_reason = $5
+     WHERE experiment_id = $6 AND turn_number = $7`,
+    [
+      metrics.inferenceDurationMs,
+      metrics.promptEvalDurationMs,
+      metrics.evalDurationMs,
+      metrics.tokensPerSecond,
+      metrics.doneReason,
+      experimentId,
+      turnNumber
+    ]
+  );
+}
+
 module.exports = {
   getDbClient,
   getExperiment,
@@ -203,5 +254,6 @@ module.exports = {
   acquireExperimentLock,
   releaseExperimentLock,
   updateGoalFound,
-  updateTurnTokens
+  updateTurnTokens,
+  updateTurnMetrics
 };

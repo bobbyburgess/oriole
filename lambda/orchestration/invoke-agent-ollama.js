@@ -428,6 +428,7 @@ Use the provided tools to navigate and explore. You will receive vision feedback
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let goalFound = false;
+    let lastOllamaMetrics = null; // Track last call's performance metrics
 
     console.log(`\n[TURN ${turnNumber}] Starting Ollama orchestration loop (max ${maxActions === Infinity ? 'unlimited' : maxActions} actions)`);
 
@@ -470,6 +471,20 @@ Use the provided tools to navigate and explore. You will receive vision feedback
       totalInputTokens += promptTokens;
       totalOutputTokens += outputTokens;
       console.log(`Token usage: ${promptTokens} in, ${outputTokens} out`);
+
+      // Extract Ollama performance metrics (timing data in nanoseconds)
+      // Store the last call's metrics to update the turn after actions complete
+      const ollamaMetrics = {
+        inferenceDurationMs: response.total_duration ? Math.round(response.total_duration / 1e6) : null,
+        promptEvalDurationMs: response.prompt_eval_duration ? Math.round(response.prompt_eval_duration / 1e6) : null,
+        evalDurationMs: response.eval_duration ? Math.round(response.eval_duration / 1e6) : null,
+        tokensPerSecond: (response.eval_duration && response.eval_count)
+          ? Math.round((response.eval_count / (response.eval_duration / 1e9)) * 100) / 100
+          : null,
+        doneReason: response.done_reason || null
+      };
+      lastOllamaMetrics = ollamaMetrics; // Save for turn-level update
+      console.log(`Performance: ${ollamaMetrics.inferenceDurationMs}ms total, ${ollamaMetrics.tokensPerSecond} tok/s`);
 
       // Add assistant's message to conversation history
       const assistantMessage = response.message;
@@ -588,6 +603,12 @@ Use the provided tools to navigate and explore. You will receive vision feedback
 
     console.log(`\n[TURN ${turnNumber}] Complete: ${actionCount} actions executed`);
     console.log(`Total tokens: ${totalInputTokens} in, ${totalOutputTokens} out`);
+
+    // Update all actions in this turn with Ollama performance metrics
+    if (lastOllamaMetrics && actionCount > 0) {
+      await db.updateTurnMetrics(experimentId, turnNumber, lastOllamaMetrics);
+      console.log(`Performance metrics updated for ${actionCount} actions in turn ${turnNumber}`);
+    }
 
     return {
       experimentId,
