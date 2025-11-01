@@ -74,34 +74,23 @@ exports.handler = async (event) => {
     /**
      * EXECUTION TRACKING METADATA
      *
-     * Step Functions provides execution context via special path syntax:
-     *   - $$.Execution.Id: Full execution ARN
-     *   - $$.Execution.Name: Human-readable execution name
-     *   - $$.State.EnteredTime: When this state started
-     *
-     * Why capture at START, not END:
-     *   - If execution crashes (Lambda timeout, OOM, etc), we still have the ARN
-     *   - Can query AWS directly for status even if DB update never happens
-     *   - Enables post-mortem debugging of stuck/failed runs
-     *
-     * The CDK stack passes these via payload injection:
-     *   payload: sfn.TaskInput.fromObject({
-     *     ...sfn.JsonPath.objectAt('$'),  // Original event
-     *     executionContext: {
-     *       executionArn: sfn.JsonPath.stringAt('$$.Execution.Id'),
-     *       executionName: sfn.JsonPath.stringAt('$$.Execution.Name'),
-     *       sqsMessageId: sfn.JsonPath.stringAt('$.messageId')  // From SQS event
-     *     }
-     *   })
+     * CDK injects execution context at top level:
+     *   event = {
+     *     input: { agentId, modelName, ... },  // Original event
+     *     executionArn: "arn:aws:states:...",
+     *     executionName: "ollama_..."
+     *   }
      *
      * See: db/migrations/015_add_execution_tracking_columns.sql for schema details
      */
-    const executionContext = event.executionContext || {};
-    const {
-      executionArn,     // arn:aws:states:REGION:ACCOUNT:execution:STATE_MACHINE:EXEC_NAME
-      executionName,    // ollama_{uuid}_{uuid} or bedrock_{uuid}_{uuid}
-      sqsMessageId      // SQS message ID that triggered this (for lifecycle tracing)
-    } = executionContext;
+    const executionArn = event.executionArn || null;
+    const executionName = event.executionName || null;
+
+    // Extract original input
+    const payload = event.input || event.detail || event;
+
+    // SQS message ID from original input (optional)
+    const sqsMessageId = payload.messageId || null;
 
     // Log execution metadata for CloudWatch correlation
     if (executionArn) {
@@ -114,9 +103,6 @@ exports.handler = async (event) => {
       // This should only happen in local testing or if CDK stack needs updating
       console.warn('No execution context provided - execution tracking will be incomplete');
     }
-
-    // Extract detail from EventBridge event structure
-    const payload = event.detail || event;
 
     /**
      * LLM PROVIDER ROUTING
