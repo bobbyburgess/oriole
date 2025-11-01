@@ -71,6 +71,50 @@ exports.handler = async (event) => {
   console.log('Start experiment event:', JSON.stringify(event, null, 2));
 
   try {
+    /**
+     * EXECUTION TRACKING METADATA
+     *
+     * Step Functions provides execution context via special path syntax:
+     *   - $$.Execution.Id: Full execution ARN
+     *   - $$.Execution.Name: Human-readable execution name
+     *   - $$.State.EnteredTime: When this state started
+     *
+     * Why capture at START, not END:
+     *   - If execution crashes (Lambda timeout, OOM, etc), we still have the ARN
+     *   - Can query AWS directly for status even if DB update never happens
+     *   - Enables post-mortem debugging of stuck/failed runs
+     *
+     * The CDK stack passes these via payload injection:
+     *   payload: sfn.TaskInput.fromObject({
+     *     ...sfn.JsonPath.objectAt('$'),  // Original event
+     *     executionContext: {
+     *       executionArn: sfn.JsonPath.stringAt('$$.Execution.Id'),
+     *       executionName: sfn.JsonPath.stringAt('$$.Execution.Name'),
+     *       sqsMessageId: sfn.JsonPath.stringAt('$.messageId')  // From SQS event
+     *     }
+     *   })
+     *
+     * See: db/migrations/015_add_execution_tracking_columns.sql for schema details
+     */
+    const executionContext = event.executionContext || {};
+    const {
+      executionArn,     // arn:aws:states:REGION:ACCOUNT:execution:STATE_MACHINE:EXEC_NAME
+      executionName,    // ollama_{uuid}_{uuid} or bedrock_{uuid}_{uuid}
+      sqsMessageId      // SQS message ID that triggered this (for lifecycle tracing)
+    } = executionContext;
+
+    // Log execution metadata for CloudWatch correlation
+    if (executionArn) {
+      console.log(`Execution ARN: ${executionArn}`);
+      console.log(`Execution Name: ${executionName}`);
+      if (sqsMessageId) {
+        console.log(`Triggered by SQS message: ${sqsMessageId}`);
+      }
+    } else {
+      // This should only happen in local testing or if CDK stack needs updating
+      console.warn('No execution context provided - execution tracking will be incomplete');
+    }
+
     // Extract detail from EventBridge event structure
     const payload = event.detail || event;
 
@@ -285,20 +329,44 @@ exports.handler = async (event) => {
       needsCooldown = false;
     }
 
-    // Create experiment record
+    /**
+     * CREATE EXPERIMENT RECORD WITH EXECUTION TRACKING
+     *
+     * New columns for execution tracking (see migration 015):
+     *   - execution_arn: Full ARN for AWS CLI queries (aws stepfunctions describe-execution)
+     *   - execution_name: Short name for log searching and human reference
+     *   - execution_status: Set to 'RUNNING' at start, updated to final status at end
+     *   - sqs_message_id: For lifecycle tracing (queue → execution → experiment)
+     *
+     * Why these are critical:
+     *   1. execution_arn enables direct AWS API access when DB updates fail
+     *   2. execution_status='RUNNING' lets us find stuck experiments:
+     *        SELECT * FROM experiments
+     *        WHERE execution_status='RUNNING' AND started_at < NOW() - INTERVAL '1 hour'
+     *   3. sqs_message_id helps debug duplicate processing or queue delays
+     *
+     * Note: last_error is NULL here, only populated in finalize-experiment on failure
+     */
     const result = await db.query(
       `INSERT INTO experiments
-       (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at, model_config, comment)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)
+       (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at,
+        model_config, comment, execution_arn, execution_name, execution_status, sqs_message_id)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9, $10, $11, $12)
        RETURNING id`,
-      [agentId, modelName, promptVersion, mazeId, startX, startY,
-       modelConfig ? JSON.stringify(modelConfig) : null,
-       payload.comment || null]
+      [
+        agentId, modelName, promptVersion, mazeId, startX, startY,
+        modelConfig ? JSON.stringify(modelConfig) : null,
+        payload.comment || null,
+        executionArn || null,      // Full ARN (nullable for backwards compatibility)
+        executionName || null,     // Short name (nullable for backwards compatibility)
+        'RUNNING',                 // Initial status (always set, even if ARN is missing)
+        sqsMessageId || null       // SQS message ID (nullable, only present for queue-triggered runs)
+      ]
     );
 
     const experimentId = result.rows[0].id;
 
-    console.log(`Created experiment ${experimentId}`);
+    console.log(`Created experiment ${experimentId} (execution: ${executionName || 'unknown'})`);
 
     return {
       experimentId,

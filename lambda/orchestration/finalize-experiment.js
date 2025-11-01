@@ -58,27 +58,81 @@ exports.handler = async (event) => {
   console.log('Finalize experiment event:', JSON.stringify(event, null, 2));
 
   try {
-    const { experimentId, success: explicitSuccess, failureReason } = event;
+    const { experimentId, success: explicitSuccess, failureReason, errorInfo } = event;
 
     const db = await getDbClient();
 
-    // If called from error handler, use explicit success=false and failure reason
+    /**
+     * ERROR PATH: Execution failed before normal completion
+     *
+     * This path is triggered when:
+     *   1. Lambda timeout (15 minute limit exceeded)
+     *   2. Unhandled exception in invoke-agent Lambda
+     *   3. Step Functions task failure (States.TaskFailed)
+     *   4. Manual abort
+     *
+     * Key fields updated:
+     *   - execution_status: Set to 'FAILED' (or 'TIMED_OUT' if we can detect it)
+     *   - last_error: Structured error info (error type + cause + timestamp)
+     *   - failure_reason: Human-readable error message (existing field)
+     *   - completed_at: Mark as completed even though it failed
+     *   - goal_found: false (didn't complete successfully)
+     *
+     * Why capture structured errors:
+     *   - errorInfo.Error: AWS error type (e.g., "Lambda.Timeout", "States.TaskFailed")
+     *   - errorInfo.Cause: Detailed message from AWS (JSON string or plain text)
+     *   - Enables automated error classification and alerting
+     *
+     * See: db/migrations/015_add_execution_tracking_columns.sql for schema details
+     */
     if (explicitSuccess === false) {
+      // Parse error details from Step Functions error handler
+      // errorInfo comes from: .addCatch(finalizeOnError, { resultPath: '$.errorInfo' })
+      let lastError = null;
+      let executionStatus = 'FAILED';  // Default to FAILED
+
+      if (errorInfo) {
+        // Detect specific error types for better status classification
+        const errorType = errorInfo.Error || 'Unknown';
+
+        if (errorType.includes('Timeout') || errorType === 'States.Timeout') {
+          executionStatus = 'TIMED_OUT';
+        }
+
+        // Structure error for database (matches schema in migration 015)
+        lastError = {
+          error: errorType,
+          cause: errorInfo.Cause || failureReason || 'No error details provided',
+          timestamp: new Date().toISOString()
+        };
+
+        console.log(`Execution failed with error type: ${errorType}`);
+      }
+
       await db.query(
         `UPDATE experiments
          SET completed_at = NOW(),
              goal_found = $1,
-             failure_reason = $2
-         WHERE id = $3`,
-        [false, failureReason || 'Unknown error', experimentId]
+             failure_reason = $2,
+             execution_status = $3,
+             last_error = $4
+         WHERE id = $5`,
+        [
+          false,
+          failureReason || 'Unknown error',
+          executionStatus,
+          lastError ? JSON.stringify(lastError) : null,
+          experimentId
+        ]
       );
 
-      console.log(`Finalized experiment ${experimentId}: failed with reason: ${failureReason}`);
+      console.log(`Finalized experiment ${experimentId}: ${executionStatus} with reason: ${failureReason}`);
 
       return {
         experimentId,
         goal_found: false,
-        failureReason
+        failureReason,
+        execution_status: executionStatus
       };
     }
 
@@ -111,20 +165,41 @@ exports.handler = async (event) => {
       }
     }
 
-    // Update experiment
+    /**
+     * SUCCESS PATH: Execution completed normally
+     *
+     * Update experiment with final status:
+     *   - execution_status: Set to 'SUCCEEDED' (execution completed, even if goal not found)
+     *   - goal_found: true/false based on whether GOAL tile (value 2) was seen
+     *   - completed_at: Timestamp of completion
+     *
+     * Important distinction:
+     *   - execution_status='SUCCEEDED' means Step Functions execution completed
+     *   - goal_found=true means the agent actually found the goal tile
+     *
+     * Possible combinations:
+     *   1. execution_status='SUCCEEDED', goal_found=true: Perfect run
+     *   2. execution_status='SUCCEEDED', goal_found=false: Completed but failed to find goal
+     *   3. execution_status='FAILED', goal_found=false: Execution crashed
+     *   4. execution_status='TIMED_OUT', goal_found=false: Lambda timeout
+     *
+     * last_error remains NULL on success path (only populated on failure path above)
+     */
     await db.query(
       `UPDATE experiments
        SET completed_at = NOW(),
-           goal_found = $1
-       WHERE id = $2`,
-      [foundGoal, experimentId]
+           goal_found = $1,
+           execution_status = $2
+       WHERE id = $3`,
+      [foundGoal, 'SUCCEEDED', experimentId]
     );
 
-    console.log(`Finalized experiment ${experimentId}: goal_found=${foundGoal}`);
+    console.log(`Finalized experiment ${experimentId}: execution_status=SUCCEEDED, goal_found=${foundGoal}`);
 
     return {
       experimentId,
-      goal_found: foundGoal
+      goal_found: foundGoal,
+      execution_status: 'SUCCEEDED'
     };
 
   } catch (error) {

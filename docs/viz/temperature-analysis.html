@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oriole Temperature Analysis - BATCH 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #0a0e17;
+            color: #e4e6eb;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #58a6ff;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #8b949e;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .chart-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #58a6ff;
+        }
+        .chart-subtitle {
+            font-size: 0.9em;
+            color: #8b949e;
+            margin-bottom: 15px;
+        }
+        svg {
+            background: #0d1117;
+            border-radius: 4px;
+        }
+        .axis {
+            color: #8b949e;
+        }
+        .axis line,
+        .axis path {
+            stroke: #30363d;
+        }
+        .axis text {
+            fill: #8b949e;
+            font-size: 11px;
+        }
+        .grid line {
+            stroke: #21262d;
+            stroke-opacity: 0.5;
+        }
+        .success-marker {
+            fill: #3fb950;
+            stroke: #2ea043;
+            stroke-width: 2;
+        }
+        .failure-marker {
+            fill: #f85149;
+            stroke: #da3633;
+            stroke-width: 2;
+        }
+        .line-path {
+            fill: none;
+            stroke-width: 2.5;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(22, 27, 34, 0.95);
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            pointer-events: none;
+            opacity: 0;
+            font-size: 13px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        }
+        .tooltip-label {
+            font-weight: 600;
+            color: #58a6ff;
+            margin-bottom: 6px;
+        }
+        .tooltip-value {
+            color: #e4e6eb;
+            margin: 3px 0;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-square {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Temperature Analysis: BATCH 1</h1>
+        <div class="subtitle">
+            qwen2.5:7b-128k | v7-neutral prompt | Temperature sweep 0.0 → 1.0
+        </div>
+
+        <div class="chart-grid">
+            <div class="chart-container">
+                <div class="chart-title">Success Rate vs Temperature</div>
+                <div class="chart-subtitle">Goal found (green) vs failed (red)</div>
+                <div id="success-chart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Movement Efficiency</div>
+                <div class="chart-subtitle">Moves per turn (higher = more actions per decision)</div>
+                <div id="efficiency-chart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Exploration Metrics</div>
+                <div class="chart-subtitle">Direction changes & reversals (%)</div>
+                <div id="exploration-chart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Memory Usage</div>
+                <div class="chart-subtitle">Recalls per turn (memory checking frequency)</div>
+                <div id="memory-chart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Position Diversity</div>
+                <div class="chart-subtitle">Unique positions explored vs revisits</div>
+                <div id="position-chart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Inference Performance</div>
+                <div class="chart-subtitle">Average tokens per second</div>
+                <div id="performance-chart"></div>
+            </div>
+        </div>
+
+        <div class="chart-container" style="grid-column: 1 / -1;">
+            <div class="chart-title">Movement Direction Distribution</div>
+            <div class="chart-subtitle">North, South, East, West moves across temperatures</div>
+            <div id="direction-chart"></div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // Data from experiments 1-11
+        const data = [{"id":1,"temperature":0,"goal_found":false,"total_actions":1475,"max_step":1475,"total_turns":92,"moves":1331,"recalls":52,"avg_inference_ms":8104.7,"avg_tok_per_sec":114.0,"north":262,"south":347,"east":410,"west":312}, {"id":2,"temperature":0.1,"goal_found":false,"total_actions":1528,"max_step":1528,"total_turns":129,"moves":1332,"recalls":67,"avg_inference_ms":9099.7,"avg_tok_per_sec":122.1,"north":331,"south":426,"east":327,"west":248}, {"id":3,"temperature":0.2,"goal_found":false,"total_actions":1550,"max_step":1550,"total_turns":96,"moves":1401,"recalls":53,"avg_inference_ms":6019.4,"avg_tok_per_sec":118.6,"north":291,"south":393,"east":403,"west":314}, {"id":4,"temperature":0.3,"goal_found":true,"total_actions":1529,"max_step":1529,"total_turns":126,"moves":1339,"recalls":65,"avg_inference_ms":6120.6,"avg_tok_per_sec":121.8,"north":264,"south":378,"east":405,"west":292}, {"id":5,"temperature":0.4,"goal_found":false,"total_actions":767,"max_step":767,"total_turns":52,"moves":695,"recalls":21,"avg_inference_ms":10874.8,"avg_tok_per_sec":114.8,"north":158,"south":191,"east":206,"west":140}, {"id":6,"temperature":0.5,"goal_found":false,"total_actions":1232,"max_step":1232,"total_turns":114,"moves":1056,"recalls":63,"avg_inference_ms":2795.3,"avg_tok_per_sec":125.4,"north":240,"south":322,"east":278,"west":216}, {"id":7,"temperature":0.6,"goal_found":false,"total_actions":1745,"max_step":1745,"total_turns":184,"moves":1446,"recalls":115,"avg_inference_ms":3986.7,"avg_tok_per_sec":129.4,"north":349,"south":412,"east":404,"west":281}, {"id":8,"temperature":0.7,"goal_found":true,"total_actions":1574,"max_step":1574,"total_turns":184,"moves":1275,"recalls":116,"avg_inference_ms":3763.2,"avg_tok_per_sec":130.4,"north":294,"south":393,"east":351,"west":237}, {"id":9,"temperature":0.8,"goal_found":true,"total_actions":1140,"max_step":1140,"total_turns":133,"moves":926,"recalls":82,"avg_inference_ms":3320.5,"avg_tok_per_sec":134.7,"north":198,"south":272,"east":282,"west":174}, {"id":10,"temperature":0.9,"goal_found":false,"total_actions":1730,"max_step":1730,"total_turns":232,"moves":1347,"recalls":151,"avg_inference_ms":4123.2,"avg_tok_per_sec":130.6,"north":334,"south":400,"east":379,"west":234}, {"id":11,"temperature":1,"goal_found":false,"total_actions":1896,"max_step":1896,"total_turns":267,"moves":1440,"recalls":189,"avg_inference_ms":2978.0,"avg_tok_per_sec":134.1,"north":350,"south":400,"east":405,"west":285}];
+
+        const metrics = [{"id":1,"temperature":0,"unique_positions":221,"avg_visits_per_pos":6.02,"max_visits_single_pos":58,"pct_direction_changes":52.7,"pct_reversals":13.1}, {"id":2,"temperature":0.1,"unique_positions":293,"avg_visits_per_pos":4.55,"max_visits_single_pos":41,"pct_direction_changes":54.0,"pct_reversals":10.4}, {"id":3,"temperature":0.2,"unique_positions":294,"avg_visits_per_pos":4.77,"max_visits_single_pos":63,"pct_direction_changes":56.2,"pct_reversals":11.3}, {"id":4,"temperature":0.3,"unique_positions":250,"avg_visits_per_pos":5.36,"max_visits_single_pos":77,"pct_direction_changes":78.0,"pct_reversals":15.8}, {"id":5,"temperature":0.4,"unique_positions":195,"avg_visits_per_pos":3.56,"max_visits_single_pos":34,"pct_direction_changes":44.7,"pct_reversals":9.1}, {"id":6,"temperature":0.5,"unique_positions":230,"avg_visits_per_pos":4.59,"max_visits_single_pos":50,"pct_direction_changes":58.6,"pct_reversals":13.3}, {"id":7,"temperature":0.6,"unique_positions":202,"avg_visits_per_pos":7.16,"max_visits_single_pos":65,"pct_direction_changes":64.5,"pct_reversals":14.9}, {"id":8,"temperature":0.7,"unique_positions":274,"avg_visits_per_pos":4.65,"max_visits_single_pos":58,"pct_direction_changes":64.2,"pct_reversals":14.7}, {"id":9,"temperature":0.8,"unique_positions":203,"avg_visits_per_pos":4.56,"max_visits_single_pos":35,"pct_direction_changes":72.6,"pct_reversals":16.2}, {"id":10,"temperature":0.9,"unique_positions":294,"avg_visits_per_pos":4.58,"max_visits_single_pos":20,"pct_direction_changes":70.6,"pct_reversals":15.8}, {"id":11,"temperature":1,"unique_positions":272,"avg_visits_per_pos":5.29,"max_visits_single_pos":74,"pct_direction_changes":76.6,"pct_reversals":20.3}];
+
+        // Merge datasets
+        const fullData = data.map(d => {
+            const m = metrics.find(metric => metric.id === d.id);
+            return {
+                ...d,
+                ...m,
+                moves_per_turn: d.moves / d.total_turns,
+                recalls_per_turn: d.recalls / d.total_turns
+            };
+        });
+
+        // Chart dimensions
+        const margin = {top: 20, right: 30, bottom: 40, left: 60};
+        const width = 560 - margin.left - margin.right;
+        const height = 320 - margin.top - margin.bottom;
+
+        // Tooltip
+        const tooltip = d3.select("#tooltip");
+
+        function showTooltip(event, d, metrics) {
+            const html = `
+                <div class="tooltip-label">Temperature: ${d.temperature}</div>
+                ${metrics.map(m => `<div class="tooltip-value">${m.label}: ${m.value(d)}</div>`).join('')}
+            `;
+            tooltip.html(html)
+                .style("opacity", 1)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 10) + "px");
+        }
+
+        function hideTooltip() {
+            tooltip.style("opacity", 0);
+        }
+
+        // Chart 1: Success Rate
+        function createSuccessChart() {
+            const svg = d3.select("#success-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 2000])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Total Actions");
+
+            // Points
+            svg.selectAll("circle")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.total_actions))
+                .attr("r", 8)
+                .attr("class", d => d.goal_found ? "success-marker" : "failure-marker")
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Total Actions", value: d => d.total_actions},
+                    {label: "Goal Found", value: d => d.goal_found ? "✓ Yes" : "✗ No"},
+                    {label: "Total Turns", value: d => d.total_turns}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Legend
+            const legend = d3.select("#success-chart")
+                .append("div")
+                .attr("class", "legend");
+
+            legend.append("div")
+                .attr("class", "legend-item")
+                .html('<div class="legend-square" style="background: #3fb950;"></div><span>Goal Found</span>');
+
+            legend.append("div")
+                .attr("class", "legend-item")
+                .html('<div class="legend-square" style="background: #f85149;"></div><span>Failed</span>');
+        }
+
+        // Chart 2: Movement Efficiency
+        function createEfficiencyChart() {
+            const svg = d3.select("#efficiency-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 16])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Line
+            const line = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.moves_per_turn));
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", line)
+                .attr("stroke", "#58a6ff");
+
+            // Points
+            svg.selectAll("circle")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.moves_per_turn))
+                .attr("r", 6)
+                .attr("class", d => d.goal_found ? "success-marker" : "failure-marker")
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Moves/Turn", value: d => d.moves_per_turn.toFixed(2)},
+                    {label: "Total Moves", value: d => d.moves},
+                    {label: "Total Turns", value: d => d.total_turns}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Moves per Turn");
+        }
+
+        // Chart 3: Exploration (direction changes)
+        function createExplorationChart() {
+            const svg = d3.select("#exploration-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 100])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Lines
+            const lineChanges = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.pct_direction_changes));
+
+            const lineReversals = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.pct_reversals));
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", lineChanges)
+                .attr("stroke", "#58a6ff");
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", lineReversals)
+                .attr("stroke", "#f778ba");
+
+            // Points for direction changes
+            svg.selectAll(".point-changes")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("class", "point-changes")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.pct_direction_changes))
+                .attr("r", 5)
+                .attr("fill", "#58a6ff")
+                .attr("stroke", "#1f6feb")
+                .attr("stroke-width", 2)
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Direction Changes", value: d => d.pct_direction_changes + "%"},
+                    {label: "Reversals", value: d => d.pct_reversals + "%"}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Points for reversals
+            svg.selectAll(".point-reversals")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("class", "point-reversals")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.pct_reversals))
+                .attr("r", 5)
+                .attr("fill", "#f778ba")
+                .attr("stroke", "#c96198")
+                .attr("stroke-width", 2)
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Direction Changes", value: d => d.pct_direction_changes + "%"},
+                    {label: "Reversals", value: d => d.pct_reversals + "%"}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y).ticks(10).tickFormat(d => d + "%"));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Percentage");
+
+            // Legend
+            const legend = d3.select("#exploration-chart")
+                .append("div")
+                .attr("class", "legend");
+
+            legend.append("div")
+                .attr("class", "legend-item")
+                .html('<div class="legend-square" style="background: #58a6ff;"></div><span>Direction Changes</span>');
+
+            legend.append("div")
+                .attr("class", "legend-item")
+                .html('<div class="legend-square" style="background: #f778ba;"></div><span>Reversals (180°)</span>');
+        }
+
+        // Chart 4: Memory Usage
+        function createMemoryChart() {
+            const svg = d3.select("#memory-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 0.8])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Line
+            const line = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.recalls_per_turn));
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", line)
+                .attr("stroke", "#d29922");
+
+            // Points
+            svg.selectAll("circle")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.recalls_per_turn))
+                .attr("r", 6)
+                .attr("class", d => d.goal_found ? "success-marker" : "failure-marker")
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Recalls/Turn", value: d => d.recalls_per_turn.toFixed(2)},
+                    {label: "Total Recalls", value: d => d.recalls}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Recalls per Turn");
+        }
+
+        // Chart 5: Position Diversity
+        function createPositionChart() {
+            const svg = d3.select("#position-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 350])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Line
+            const line = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.unique_positions));
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", line)
+                .attr("stroke", "#a371f7");
+
+            // Points
+            svg.selectAll("circle")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.unique_positions))
+                .attr("r", 6)
+                .attr("class", d => d.goal_found ? "success-marker" : "failure-marker")
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Unique Positions", value: d => d.unique_positions},
+                    {label: "Avg Visits/Pos", value: d => d.avg_visits_per_pos.toFixed(2)},
+                    {label: "Max Single Pos", value: d => d.max_visits_single_pos}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Unique Positions");
+        }
+
+        // Chart 6: Performance
+        function createPerformanceChart() {
+            const svg = d3.select("#performance-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([100, 140])
+                .range([height, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(""));
+
+            // Line
+            const line = d3.line()
+                .x(d => x(d.temperature))
+                .y(d => y(d.avg_tok_per_sec));
+
+            svg.append("path")
+                .datum(fullData)
+                .attr("class", "line-path")
+                .attr("d", line)
+                .attr("stroke", "#56d364");
+
+            // Points
+            svg.selectAll("circle")
+                .data(fullData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.temperature))
+                .attr("cy", d => y(d.avg_tok_per_sec))
+                .attr("r", 6)
+                .attr("class", d => d.goal_found ? "success-marker" : "failure-marker")
+                .on("mouseover", (event, d) => showTooltip(event, d, [
+                    {label: "Tokens/sec", value: d => d.avg_tok_per_sec},
+                    {label: "Avg Inference", value: d => (d.avg_inference_ms / 1000).toFixed(1) + "s"}
+                ]))
+                .on("mouseout", hideTooltip);
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Tokens per Second");
+        }
+
+        // Chart 7: Direction Distribution (stacked area)
+        function createDirectionChart() {
+            const margin2 = {top: 20, right: 30, bottom: 40, left: 60};
+            const width2 = 1300 - margin2.left - margin2.right;
+            const height2 = 400 - margin2.top - margin2.bottom;
+
+            const svg = d3.select("#direction-chart")
+                .append("svg")
+                .attr("width", width2 + margin2.left + margin2.right)
+                .attr("height", height2 + margin2.top + margin2.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin2.left},${margin2.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, 1])
+                .range([0, width2]);
+
+            const y = d3.scaleLinear()
+                .domain([0, 450])
+                .range([height2, 0]);
+
+            // Grid
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y).tickSize(-width2).tickFormat(""));
+
+            // Lines for each direction
+            const directions = [
+                {key: 'north', color: '#58a6ff', label: 'North'},
+                {key: 'south', color: '#f85149', label: 'South'},
+                {key: 'east', color: '#3fb950', label: 'East'},
+                {key: 'west', color: '#d29922', label: 'West'}
+            ];
+
+            directions.forEach(dir => {
+                const line = d3.line()
+                    .x(d => x(d.temperature))
+                    .y(d => y(d[dir.key]));
+
+                svg.append("path")
+                    .datum(fullData)
+                    .attr("class", "line-path")
+                    .attr("d", line)
+                    .attr("stroke", dir.color);
+
+                svg.selectAll(`.point-${dir.key}`)
+                    .data(fullData)
+                    .enter()
+                    .append("circle")
+                    .attr("class", `point-${dir.key}`)
+                    .attr("cx", d => x(d.temperature))
+                    .attr("cy", d => y(d[dir.key]))
+                    .attr("r", 4)
+                    .attr("fill", dir.color)
+                    .attr("stroke", "none")
+                    .on("mouseover", (event, d) => showTooltip(event, d, [
+                        {label: "North", value: d => d.north},
+                        {label: "South", value: d => d.south},
+                        {label: "East", value: d => d.east},
+                        {label: "West", value: d => d.west}
+                    ]))
+                    .on("mouseout", hideTooltip);
+            });
+
+            // Axes
+            svg.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height2})`)
+                .call(d3.axisBottom(x).ticks(10));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            // Labels
+            svg.append("text")
+                .attr("x", width2 / 2)
+                .attr("y", height2 + 35)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Temperature");
+
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height2 / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#8b949e")
+                .style("font-size", "12px")
+                .text("Number of Moves");
+
+            // Legend
+            const legend = d3.select("#direction-chart")
+                .append("div")
+                .attr("class", "legend");
+
+            directions.forEach(dir => {
+                legend.append("div")
+                    .attr("class", "legend-item")
+                    .html(`<div class="legend-square" style="background: ${dir.color};"></div><span>${dir.label}</span>`);
+            });
+        }
+
+        // Create all charts
+        createSuccessChart();
+        createEfficiencyChart();
+        createExplorationChart();
+        createMemoryChart();
+        createPositionChart();
+        createPerformanceChart();
+        createDirectionChart();
+    </script>
+</body>
+</html>
