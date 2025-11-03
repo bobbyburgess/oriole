@@ -54,6 +54,7 @@ async function getPrompt(promptVersion) {
  * - maxContextWindow: Total context window size in tokens (default 32768)
  * - temperature: Sampling temperature (default 0.2)
  * - maxOutputTokens: Max tokens in model output (default 2000)
+ * - repeatPenalty: Repetition penalty (default 1.0 = disabled, higher = stronger penalty)
  *
  * @param {Object} eventConfig - Config from event.config (REQUIRED)
  * @throws {Error} If config not provided in event
@@ -75,11 +76,20 @@ async function getOllamaOptions(eventConfig) {
   }
 
   console.log('Using config from event:', eventConfig);
-  return {
+
+  const options = {
     num_ctx: eventConfig.maxContextWindow,
     temperature: eventConfig.temperature,
     num_predict: eventConfig.maxOutputTokens
   };
+
+  // Add repeat_penalty if specified (optional, defaults to Ollama's default 1.1 if not set)
+  // Use 1.0 to disable repetition filtering for pure model behavior
+  if (eventConfig.repeatPenalty !== undefined) {
+    options.repeat_penalty = eventConfig.repeatPenalty;
+  }
+
+  return options;
 }
 
 async function getOllamaEndpoint() {

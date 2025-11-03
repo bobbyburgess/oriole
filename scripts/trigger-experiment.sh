@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to trigger a maze experiment via EventBridge
-# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from-experiment-id] [num-ctx] [temperature] [num-predict] [comment]
+# Usage: ./trigger-experiment.sh <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from-experiment-id] [num-ctx] [temperature] [num-predict] [repeat-penalty] [comment]
 
 AGENT_ID=$1
 AGENT_ALIAS_ID=$2
@@ -12,7 +12,8 @@ RESUME_FROM=${6:-""}  # Optional resume-from experiment ID
 NUM_CTX=${7:-""}         # Optional: context window size
 TEMPERATURE=${8:-""}     # Optional: sampling temperature
 NUM_PREDICT=${9:-""}     # Optional: max output tokens
-COMMENT=${10:-""}        # Optional: comment for labeling experiment batches
+REPEAT_PENALTY=${10:-""}  # Optional: repetition penalty (1.0 = disabled)
+COMMENT=${11:-""}        # Optional: comment for labeling experiment batches
 
 if [ -z "$AGENT_ID" ] || [ -z "$AGENT_ALIAS_ID" ] || [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ]; then
   echo "Usage: $0 <agent-id> <agent-alias-id> <model-name> <maze-id> [prompt-version] [resume-from] [max-context-window] [temperature] [max-output-tokens]"
@@ -61,12 +62,23 @@ if [ -z "$NUM_CTX" ] || [ -z "$TEMPERATURE" ] || [ -z "$NUM_PREDICT" ]; then
 fi
 
 # Build config JSON
-CONFIG_JSON=",
+# Include repeatPenalty only if provided (optional parameter)
+if [ -n "$REPEAT_PENALTY" ]; then
+  CONFIG_JSON=",
+  \"config\": {
+    \"maxContextWindow\": $NUM_CTX,
+    \"temperature\": $TEMPERATURE,
+    \"maxOutputTokens\": $NUM_PREDICT,
+    \"repeatPenalty\": $REPEAT_PENALTY
+  }"
+else
+  CONFIG_JSON=",
   \"config\": {
     \"maxContextWindow\": $NUM_CTX,
     \"temperature\": $TEMPERATURE,
     \"maxOutputTokens\": $NUM_PREDICT
   }"
+fi
 
 # Add comment if provided
 if [ -n "$COMMENT" ]; then

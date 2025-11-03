@@ -207,14 +207,20 @@ async function updateGoalFound(experimentId, found) {
   );
 }
 
-// Update all actions in a turn with token usage data
+// Update first action in a turn with token usage data
 // Called from check-progress after invoke-agent returns with turn-level tokens
+// Only the first action (lowest step_number) gets the tokens; others remain null
 async function updateTurnTokens(experimentId, turnNumber, inputTokens, outputTokens) {
   const db = await getDbClient();
   await db.query(
     `UPDATE agent_actions
      SET input_tokens = $1, output_tokens = $2
-     WHERE experiment_id = $3 AND turn_number = $4`,
+     WHERE experiment_id = $3 AND turn_number = $4
+     AND step_number = (
+       SELECT MIN(step_number)
+       FROM agent_actions
+       WHERE experiment_id = $3 AND turn_number = $4
+     )`,
     [inputTokens, outputTokens, experimentId, turnNumber]
   );
 }

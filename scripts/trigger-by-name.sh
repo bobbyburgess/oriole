@@ -3,13 +3,13 @@
 # Trigger Experiment by Model Name
 # Looks up agent/alias IDs from Parameter Store and triggers an experiment
 #
-# Usage: ./trigger-by-name.sh <model-name> <maze-id> [prompt-version] [max-context-window] [temperature] [max-output-tokens] [--resume-from <experiment-id>] [--comment "text"]
+# Usage: ./trigger-by-name.sh <model-name> <maze-id> [prompt-version] [max-context-window] [temperature] [max-output-tokens] [repeat-penalty] [--resume-from <experiment-id>] [--comment "text"]
 #
 # Example:
-#   ./trigger-by-name.sh claude-3.5-haiku 1 v2 32768 0.2 4096
-#   ./trigger-by-name.sh nova-pro 3 v3-react-basic 32768 0.5 4096
-#   ./trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive 32768 0.2 4096 --resume-from 150
-#   ./trigger-by-name.sh qwen2.5:14b 1 v7-neutral 16384 0 3072 --comment "A/B test: 14b vs 7b"
+#   ./trigger-by-name.sh claude-3.5-haiku 1 v2 32768 0.2 4096 1.1
+#   ./trigger-by-name.sh nova-pro 3 v3-react-basic 32768 0.5 4096 1.1
+#   ./trigger-by-name.sh claude-3-haiku 1 v3-react-adaptive 32768 0.2 4096 1.1 --resume-from 150
+#   ./trigger-by-name.sh qwen2.5:7b-clean128k 1 v7-neutral 131072 0.5 3072 1.0 --comment "Pure model behavior"
 #
 # Available models:
 #   AWS Bedrock:
@@ -32,11 +32,12 @@ PROMPT_VERSION=${3:-v1}
 MAX_CONTEXT_WINDOW=$4
 TEMPERATURE=$5
 MAX_OUTPUT_TOKENS=$6
+REPEAT_PENALTY=${7:-1.1}  # Default to Ollama's default if not specified
 RESUME_FROM=""
 COMMENT=""
 
 # Parse optional parameters
-shift 6 2>/dev/null || true
+shift 7 2>/dev/null || true
 while [[ $# -gt 0 ]]; do
   case $1 in
     --resume-from)
@@ -57,12 +58,15 @@ REGION="us-west-2"
 PROFILE="bobby"
 
 if [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ] || [ -z "$MAX_CONTEXT_WINDOW" ] || [ -z "$TEMPERATURE" ] || [ -z "$MAX_OUTPUT_TOKENS" ]; then
-  echo "Usage: $0 <model-name> <maze-id> <prompt-version> <max-context-window> <temperature> <max-output-tokens> [--resume-from <experiment-id>] [--comment \"text\"]"
+  echo "Usage: $0 <model-name> <maze-id> <prompt-version> <max-context-window> <temperature> <max-output-tokens> [repeat-penalty] [--resume-from <experiment-id>] [--comment \"text\"]"
   echo ""
-  echo "All config parameters are REQUIRED:"
+  echo "Required config parameters:"
   echo "  max-context-window: Total context window in tokens (e.g., 32768, 200000)"
   echo "  temperature:        Sampling temperature (e.g., 0.0, 0.2, 0.7)"
   echo "  max-output-tokens:  Max tokens in output (e.g., 2000, 4096)"
+  echo ""
+  echo "Optional config parameters:"
+  echo "  repeat-penalty:     Repetition penalty (default: 1.1, use 1.0 for pure model behavior)"
   echo ""
   echo "Available models:"
   echo "  AWS Bedrock:"
@@ -74,13 +78,13 @@ if [ -z "$MODEL_NAME" ] || [ -z "$MAZE_ID" ] || [ -z "$MAX_CONTEXT_WINDOW" ] || 
   echo "    - nova-premier"
   echo "  Local Ollama (use any model from 'ollama list'):"
   echo "    - llama3.2:latest"
-  echo "    - qwen2.5-coder:latest"
+  echo "    - qwen2.5:7b-clean128k"
   echo ""
   echo "Example:"
-  echo "  $0 claude-3.5-haiku 1 v2 32768 0.2 4096"
-  echo "  $0 llama3.2:latest 1 v1 32768 0.2 2000"
-  echo "  $0 claude-3-haiku 1 v3-react-adaptive 32768 0.2 4096 --resume-from 150"
-  echo "  $0 qwen2.5:14b 1 v7-neutral 16384 0 3072 --comment \"A/B test: 14b vs 7b temp=0\""
+  echo "  $0 claude-3.5-haiku 1 v2 32768 0.2 4096 1.1"
+  echo "  $0 llama3.2:latest 1 v1 32768 0.2 2000 1.0"
+  echo "  $0 claude-3-haiku 1 v3-react-adaptive 32768 0.2 4096 1.1 --resume-from 150"
+  echo "  $0 qwen2.5:7b-clean128k 1 v7-neutral 131072 0.5 3072 1.0 --comment \"Pure model behavior\""
   exit 1
 fi
 
@@ -140,4 +144,4 @@ fi
 
 # Call the original trigger script with the resolved IDs and config params
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/trigger-experiment.sh" "$AGENT_ID" "$ALIAS_ID" "$MODEL_NAME" "$MAZE_ID" "$PROMPT_VERSION" "$RESUME_FROM" "$MAX_CONTEXT_WINDOW" "$TEMPERATURE" "$MAX_OUTPUT_TOKENS" "$COMMENT"
+"$SCRIPT_DIR/trigger-experiment.sh" "$AGENT_ID" "$ALIAS_ID" "$MODEL_NAME" "$MAZE_ID" "$PROMPT_VERSION" "$RESUME_FROM" "$MAX_CONTEXT_WINDOW" "$TEMPERATURE" "$MAX_OUTPUT_TOKENS" "$REPEAT_PENALTY" "$COMMENT"

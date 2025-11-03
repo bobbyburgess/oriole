@@ -221,6 +221,11 @@ exports.handler = async (event) => {
         max_actions_per_turn: maxActionsPerTurn,
         vision_range: visionRange
       };
+
+      // Add optional repeatPenalty if provided (1.0 = disabled, higher = stronger penalty)
+      if (config.repeatPenalty !== undefined) {
+        modelConfig.repeat_penalty = config.repeatPenalty;
+      }
       console.log('Ollama model config captured:', modelConfig);
     } else {
       // Bedrock experiments: Store config for tracking but it won't affect AWS-managed settings
