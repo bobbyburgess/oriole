@@ -97,7 +97,12 @@ async function getOllamaEndpoint() {
     Name: '/oriole/ollama/endpoint'
   });
   const response = await ssmClient.send(command);
-  return response.Parameter.Value;
+  const baseEndpoint = response.Parameter.Value;
+
+  // Append GPU prefix for multi-GPU routing
+  // GPU1 = RTX 4080 (Windows), GPU2 = M4 Pro
+  // Using GPU2 (M4 Pro) for faster inference
+  return `${baseEndpoint}/gpu2`;
 }
 
 async function getOllamaApiKey() {
@@ -456,23 +461,14 @@ Use the provided tools to navigate and explore. You will receive vision feedback
 
       // Track token usage
       // Vision/multimodal models (llava, phi4, etc.) may not return token counts in text-only mode
-      // Default to null for these models rather than failing the experiment
-      const isVisionModel = modelName.includes('llava') || modelName.includes('phi4');
-
+      // Log warnings for missing token counts but don't fail experiments
+      // Ollama may occasionally not return token counts during context overflow, model swapping, etc.
+      // Better to record the reasoning/actions and continue than to fail the entire experiment
       if (response.prompt_eval_count === undefined || response.prompt_eval_count === null) {
-        if (isVisionModel) {
-          console.log(`Vision model ${modelName} did not return prompt_eval_count - defaulting to null`);
-        } else {
-          // FAIL FAST: Token counts are critical for cost tracking and experiment analysis (text-only models)
-          throw new Error(`Missing prompt_eval_count in Ollama response for model ${modelName}`);
-        }
+        console.warn(`WARNING: Missing prompt_eval_count in Ollama response for model ${modelName} on turn ${turnNumber} - defaulting to 0`);
       }
       if (response.eval_count === undefined || response.eval_count === null) {
-        if (isVisionModel) {
-          console.log(`Vision model ${modelName} did not return eval_count - defaulting to null`);
-        } else {
-          throw new Error(`Missing eval_count in Ollama response for model ${modelName}`);
-        }
+        console.warn(`WARNING: Missing eval_count in Ollama response for model ${modelName} on turn ${turnNumber} - defaulting to 0`);
       }
 
       // Add token counts if available (may be undefined for vision models)
