@@ -376,7 +376,6 @@ exports.handler = async (event) => {
     // Construct the initial system message with exploration history
     let systemMessage = `You are continuing a grid exploration experiment.
 
-Experiment ID: ${experimentId}
 Your Current Position: (${currentX}, ${currentY})
 Goal: ${goalDescription}
 
