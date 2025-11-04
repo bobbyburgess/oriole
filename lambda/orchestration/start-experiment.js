@@ -154,7 +154,9 @@ exports.handler = async (event) => {
       console.log(`Resume position: (${startX}, ${startY})`);
     }
 
-    // Note: prompt text is fetched at runtime in invoke-agent, not stored in DB
+    // Fetch prompt text for reproducibility (store in model_config)
+    const promptText = await getPrompt(promptVersion);
+    console.log(`Fetched prompt ${promptVersion} (${promptText.length} chars)`);
 
     /**
      * Capture model configuration for reproducibility and A/B testing
@@ -219,7 +221,9 @@ exports.handler = async (event) => {
         max_moves: maxMoves,
         max_duration_minutes: maxDurationMinutes,
         max_actions_per_turn: maxActionsPerTurn,
-        vision_range: visionRange
+        vision_range: visionRange,
+        // Prompt text for reproducibility
+        prompt_text: promptText
       };
 
       // Add optional repeatPenalty if provided (1.0 = disabled, higher = stronger penalty)
@@ -243,7 +247,9 @@ exports.handler = async (event) => {
       modelConfig = {
         num_ctx: config.maxContextWindow,
         temperature: config.temperature,
-        num_predict: config.maxOutputTokens
+        num_predict: config.maxOutputTokens,
+        // Prompt text for reproducibility
+        prompt_text: promptText
       };
       console.log('Bedrock model config captured (for tracking only):', modelConfig);
     }
@@ -341,8 +347,11 @@ exports.handler = async (event) => {
     const result = await db.query(
       `INSERT INTO experiments
        (agent_id, model_name, prompt_version, maze_id, start_x, start_y, started_at,
-        model_config, comment, execution_arn, execution_name, execution_status, sqs_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9, $10, $11, $12)
+        model_config, comment, execution_arn, execution_name, execution_status, sqs_message_id,
+        temperature, num_ctx, num_predict, repeat_penalty, top_p, top_k,
+        vision_range, recall_interval, max_actions_per_turn, max_moves, max_duration_minutes)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9, $10, $11, $12,
+               $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING id`,
       [
         agentId, modelName, promptVersion, mazeId, startX, startY,
@@ -351,7 +360,19 @@ exports.handler = async (event) => {
         executionArn || null,      // Full ARN (nullable for backwards compatibility)
         executionName || null,     // Short name (nullable for backwards compatibility)
         'RUNNING',                 // Initial status (always set, even if ARN is missing)
-        sqsMessageId || null       // SQS message ID (nullable, only present for queue-triggered runs)
+        sqsMessageId || null,      // SQS message ID (nullable, only present for queue-triggered runs)
+        // Extract to columns for fast querying/indexing
+        modelConfig?.temperature || null,
+        modelConfig?.num_ctx || null,
+        modelConfig?.num_predict || null,
+        modelConfig?.repeat_penalty || null,
+        modelConfig?.top_p || null,
+        modelConfig?.top_k || null,
+        modelConfig?.vision_range || null,
+        modelConfig?.recall_interval || null,
+        modelConfig?.max_actions_per_turn || null,
+        modelConfig?.max_moves || null,
+        modelConfig?.max_duration_minutes || null
       ]
     );
 
